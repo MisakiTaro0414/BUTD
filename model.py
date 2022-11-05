@@ -164,7 +164,6 @@ class DecoderAttModule(nn.Module):
 
         # VOCAB SCORING
         preds = torch.zeros(batchSize, max(decode_lengths), vocabSize).to(device)
-        preds2 = torch.zeros(batchSize, max(decode_lengths), vocabSize).to(device)
         
         """
         1) Hidden States, Mean-Pooled Features, Word Embeddings -> Top-Down Attention Model
@@ -179,9 +178,6 @@ class DecoderAttModule(nn.Module):
                 torch.cat([hidden2[:bSize],featsAvg[:bSize],embeddings[:bSize, timestep, :]], dim=1),(hidden1[:bSize], cell1[:bSize]))
             attention_weighted_encoding = self.attention(feats[:bSize],hidden1[:bSize])
             
-            # 2) - SHAPE: (bSize, vocabSize)
-            predictions2 = self.linear2(self.dropout(hidden1))
-            
             # 3)
             hidden2,cell2 = self.lang_layer(
                 torch.cat([attention_weighted_encoding[:bSize],hidden1[:bSize]], dim=1),
@@ -191,6 +187,5 @@ class DecoderAttModule(nn.Module):
             predictions = self.linear(self.dropout(hidden2))
 
             preds[:bSize, timestep, :] = predictions
-            preds2[:bSize, timestep, :] = predictions2
 
-        return preds, preds2, sequences, decode_lengths, positions
+        return preds, sequences, decode_lengths, positions
