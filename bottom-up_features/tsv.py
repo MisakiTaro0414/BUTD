@@ -33,8 +33,13 @@ if __name__ == '__main__':
     howto_validate = h5py.File(file_validation, "w")
 
     if os.path.exists(training_file) and os.path.exists(validation_file):
-        images_training = pickle.load(open(training_file))
-        images_validation = pickle.load(open(validation_file))
+        with open(training_file, "rb") as f:
+            images_training = pickle.load(f)
+        with open(validation_file, "rb") as f:
+            images_validation = pickle.load(f)
+
+        #images_training = pickle.load(open(training_file, "rb"))
+        #images_validation = pickle.load(open(validation_file, "rb"))
     else:
         images_training = utils.load_imageid('../data/train2014')
         images_validation = utils.load_imageid('../data/val2014')
@@ -66,7 +71,7 @@ if __name__ == '__main__':
     count_val = 0
 
     print("loading TSV file...")
-    with open(input_file, "r+b") as file_tsv:
+    with open(input_file, "r") as file_tsv:
         
         reader = csv.DictReader(file_tsv, delimiter='\t', fieldnames=FIELDNAMES)
         
@@ -75,12 +80,12 @@ if __name__ == '__main__':
             objecter['num_boxes'] = int(objecter['num_boxes'])
 
             id_image = int(objecter['image_id'])
-            width_image = float(objecter['image_w'])
-            height_image = float(objecter['image_h'])
+            width_image = float(objecter['width_image'])
+            height_image = float(objecter['height_image'])
 
             # Bounding Box generation
             boundingboxes = np.frombuffer(
-                base64.decodestring(objecter['boxes']),
+                base64.decodebytes(bytes(objecter['boxes'], encoding="utf8")),
                 dtype=np.float32).reshape((objecter['num_boxes'], -1))
 
             w_box = boundingboxes[:, 2] - boundingboxes[:, 0]
@@ -121,7 +126,7 @@ if __name__ == '__main__':
                 bb_trainimg[count_train, :, :] = boundingboxes
                 
                 feats_trainimg[count_train, :, :] = np.frombuffer(
-                    base64.decodestring(objecter['features']),
+                    base64.decodebytes(bytes(objecter['features'], encoding="utf8")),
                     dtype=np.float32).reshape((objecter['num_boxes'], -1))
                 
                 spatialfeats_trainimg[count_train, :, :] = feats_space
@@ -134,7 +139,7 @@ if __name__ == '__main__':
                 bb_valimg[count_val, :, :] = boundingboxes
                 
                 feats_valimg[count_val, :, :] = np.frombuffer(
-                    base64.decodestring(objecter['features']),
+                    base64.decodebytes(bytes(objecter['features'], encoding="utf8")),
                     dtype=np.float32).reshape((objecter['num_boxes'], -1))
                 
                 spatialfeats_valimg[count_val, :, :] = feats_space
