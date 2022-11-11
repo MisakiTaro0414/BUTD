@@ -146,7 +146,7 @@ def init_embedding(embeddings):
     torch.nn.init.uniform_(embeddings, -bias, bias)
 
 
-def save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, recent_bleu4, is_best):
+def save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4):
     """
     Saves model checkpoint.
     :param data_name: base name of processed dataset
@@ -164,9 +164,6 @@ def save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, recent_ble
              'decoder_optimizer': optimizer}
     filename = 'checkpoint_' + data_name + '.pth.tar'
     torch.save(state, filename)
-    # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
-    if is_best:
-        torch.save(state, 'BEST_' + str(epoch) + filename)
 
 def topk_accuracy(preds, labels, k):
     """

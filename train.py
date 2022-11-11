@@ -5,22 +5,24 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from models import  DecoderAttModule
+from model import  DecoderAttModule
 from datasets import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
+cudnn.benchmark = True 
 
 # Data parameters
 data_root = 'final_dataset'  # folder with data files saved by create_input_files.py
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 
 # Model parameters
-emb_dim = 1024  # dimension of word embeddings
-decoder_dim = 1024  # dimension of decoder RNN
-attention_dim = 1024  # dimension of attention linear layers
+embSize = 1024  # dimension of word embeddings
+decoderSize = 1024  # dimension of decoder RNN
+attentionSize = 1024  # dimension of attention linear layers
 dropout = 0.5
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
-cudnn.benchmark = True  
+ 
 
 # Training parameters
 continue_epoch = 0
@@ -29,7 +31,6 @@ bad_epochs = 0  # keeps track of number of epochs since there's been an improvem
 batch_size = 100
 workers = 1  # for data-loading; right now, only 1 works with h5py
 best_bleu4 = 0.  # BLEU-4 score right now
-print_freq = 100  # print training/validation stats every __ batches
 checkpoint = None  # path to checkpoint, None if none
 
 
@@ -45,9 +46,9 @@ def main():
     with open(mapping_file, 'r') as j:
         mapping = json.load(j)
 
-    # Initialize / load checkpoint
+
     if checkpoint is None:
-        decoder = DecoderAttModule(attention_dim, emb_dim,decoder_dim, len(mapping), dropout)
+        decoder = DecoderAttModule(attentionSize, embSize,decoderSize, len(mapping), dropout)
 
         optimizer = torch.optim.Adamax(params=filter(lambda x: x.requires_grad, decoder.parameters()))
 
@@ -94,7 +95,7 @@ def main():
             print("\nEpochs since last improvement: %d\n" % (bad_epochs,))
 
         # Save checkpoint
-        save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, recent_bleu4, is_best)
+        save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score)
 
 
 def train(train_loader, decoder, criterion, optimizer, epoch):
@@ -164,15 +165,15 @@ def train(train_loader, decoder, criterion, optimizer, epoch):
         time_start = time.time()
 
         # Print status
-        if i % print_freq == 0:
+        if i % 100 == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Batch Time {batch_time:.3f}\t'
                   'Data Load Time {data_time:.3f})\t'
                   'Loss {loss:.4f} ({loss_ave:.4f})\t'
                   'Top-5 Accuracy {top5:.3f} ({top5_ave:.4f})'.format(epoch, i, len(train_loader),
                                                                           batch_time=batch_time,
-                                                                          data_time=data_time, loss, loss_ave, 
-                                                                          top5, top5_ave))
+                                                                          data_time=data_time, loss=loss, loss_ave =loss_ave, 
+                                                                          top5 = top5, top5_ave = top5_ave))
 
 
 def validate(val_loader, decoder, criterion):
@@ -190,7 +191,7 @@ def validate(val_loader, decoder, criterion):
     losses = 0
     top5accs = 0
 
-    start = time.time()
+    time_start = time.time()
 
     groundtruths = []  # references (true captions) for calculating BLEU-4 score
     predictions = []  # hypotheses (predictions)
@@ -232,7 +233,7 @@ def validate(val_loader, decoder, criterion):
 
             start = time.time()
 
-            if i % print_freq == 0:
+            if i % 100 == 0:
                 print('Validation: [{0}/{1}]\t'
                       'Batch Time {batch_time:.3f})\t'
                       'Loss {loss:.4f} ({loss_ave:.4f}) )\t'
