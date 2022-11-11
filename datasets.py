@@ -37,7 +37,7 @@ class CustomDataset(Dataset):
         self.transform = transform
 
         # the size of dataset
-        self.size = len(self.words)
+        self.size = len(self.sequences)
 
         # sequences per image
         self.sequencesperimage = 5
