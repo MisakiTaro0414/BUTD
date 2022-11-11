@@ -24,43 +24,43 @@ class AttModule(nn.Module):
         self.relu = nn.ReLU()
 
         # process image
-        self.features = weight_norm(nn.Linear(featureSize, attSize))  
+        self.att_feat = weight_norm(nn.Linear(featureSize, attSize))  
         
         self.softmax = nn.Softmax(dim=1)
 
         # process decoded values
-        self.decoded = weight_norm(nn.Linear(decodeSize, attSize))  
+        self.att_decoder = weight_norm(nn.Linear(decodeSize, attSize))  
         
         # for softmax
         self.att = weight_norm(nn.Linear(attSize, 1))
         
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, image, decoded):
+    def forward(self, image, h1):
         """
         Forward propagation.
         image: encoded images - SHAPE: (batch_size, 36, features_dim)
-        decoded: previous decoder output - SHAPE: (batch_size, decoder_dim)
+        h1: previous decoder output - SHAPE: (batch_size, decoder_dim)
         """
 
         # Shape: (batch size, 36, attention_dim)
-        dec_layer = self.decoded(decoded)
+        h1_att = self.att_decoder(h1)
 
         # Shape: (batch size, attention_dim)
-        img_layer = self.features(image)     
+        img_att = self.att_feat(image)     
         
         # Shape: (batch size, 36)
-        att1 = self.dropout(self.relu(dec_layer.unsqueeze(1) + img_layer))
+        att1 = self.dropout(self.relu(h1_att.unsqueeze(1) + img_att))
         att2 = self.att(att1)
-        attributes = att2.squeeze(2)  
+        attention = att2.squeeze(2)  
         
         # Shape: (batch size, 36)
-        sigmoid = self.softmax(attributes)  
+        sigmoid = self.softmax(attention)  
         
         # Shape: (batch size, featureSize)
-        aw_encoded = torch.sum((image * sigmoid.unsqueeze(2)), dim=1) 
+        aw_images = torch.sum((image * sigmoid.unsqueeze(2)), dim=1) 
 
-        return aw_encoded
+        return aw_images
 
 
 class DecoderAttModule(nn.Module):
@@ -105,7 +105,7 @@ class DecoderAttModule(nn.Module):
         self.linear = weight_norm(nn.Linear(decodeSize, vocabSize))  
         self.linear2 = weight_norm(nn.Linear(decodeSize, vocabSize))
         
-        self.init_weights()  # initialize some layers with the uniform distribution
+        self.init_weights() 
 
     def init_weights(self):
         """
@@ -132,11 +132,9 @@ class DecoderAttModule(nn.Module):
 
     def forward(self, feats, sequences, sizes):
         """
-
         feats: encoded images - SHAPE: (batch_size, enc_image_size, enc_image_size, encoder_dim)
         sizes: caption lengths - SHAPE: (batch_size, 1)
         sequences: encoded captions - SHAPE: (batch_size, max_caption_length)
-
         OUTPUT: vocab scores, sorted caption sequences, sizes, weights, indices etc.
         """
 
@@ -176,14 +174,14 @@ class DecoderAttModule(nn.Module):
             # 1)
             hidden1,cell1 = self.TD(
                 torch.cat([hidden2[:bSize],featsAvg[:bSize],embeddings[:bSize, timestep, :]], dim=1),(hidden1[:bSize], cell1[:bSize]))
-            attention_weighted_encoding = self.attention(feats[:bSize],hidden1[:bSize])
+            attention_weighted_encoding = self.attModule(feats[:bSize],hidden1[:bSize])
             
-            # 3)
+            # 2)
             hidden2,cell2 = self.lang_layer(
                 torch.cat([attention_weighted_encoding[:bSize],hidden1[:bSize]], dim=1),
                 (hidden2[:bSize], cell2[:bSize]))
             
-            # 2) - SHAPE: (bSize, vocabSize)
+            # 3) - SHAPE: (bSize, vocabSize)
             predictions = self.linear(self.dropout(hidden2))
 
             preds[:bSize, timestep, :] = predictions
