@@ -5,7 +5,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from model import  DecoderAttModule
+from ARNet import  DecoderAttModule
 from datasets import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
@@ -86,17 +86,18 @@ def main():
 
         # One epoch's validation
         bleu4_score = validate(val_loader, decoder, criterion)
-     
+        best = False
         if bleu4_score > best_bleu4_score:
             best_bleu4_score = bleu4_score
             bad_epochs = 0
+            best = True
             
         else:
             bad_epochs += 1
             print("\nEpochs since last improvement: %d\n" % (bad_epochs,))
 
         # Save checkpoint
-        save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score)
+        save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
 
 
 def train(train_loader, decoder, criterion, optimizer, epoch):
@@ -130,7 +131,7 @@ def train(train_loader, decoder, criterion, optimizer, epoch):
         sequencelength = sequencelength.to(device)
 
         # Forward prop.
-        preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, sequence, sequencelength)
+        preds, sorted_sequence, decode_lengths, sort_indexes, loss_ar = decoder(imagefeatures, sequence, sequencelength)
   
         #Max-pooling across predicted words across time steps for discriminative supervision
 
@@ -143,8 +144,9 @@ def train(train_loader, decoder, criterion, optimizer, epoch):
         labels = pack_padded_sequence(labels, decode_lengths, batch_first=True).data
 
         # Calculate loss
-
-        loss = criterion(preds, labels)
+        
+        loss = criterion(preds, labels) + 0.01 * loss_ar
+        
         optimizer.zero_grad()
         loss.backward()
 	
