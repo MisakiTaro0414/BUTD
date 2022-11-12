@@ -138,7 +138,7 @@ class DecoderAttModule(nn.Module):
         OUTPUT: vocab scores, sorted caption sequences, sizes, weights, indices etc.
         """
 
-        vocabSize = self.vocab_size
+        vocabSize = self.vocabSize
 
         batchSize = feats.size(0)
 

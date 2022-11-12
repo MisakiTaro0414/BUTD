@@ -48,7 +48,7 @@ def main():
 
 
     if checkpoint is None:
-        decoder = DecoderAttModule(attentionSize, embSize,decoderSize, len(mapping), dropout)
+        decoder = DecoderAttModule(int(attentionSize), int(embSize), int(decoderSize), len(mapping),featureSize=2048, dropout=0.5)
 
         optimizer = torch.optim.Adamax(params=filter(lambda x: x.requires_grad, decoder.parameters()))
 
@@ -71,6 +71,7 @@ def main():
     val_loader = torch.utils.data.DataLoader(CustomDataset(data_root, data_name, 'VAL'), batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
  
     # Epochs
+    best_bleu4_score = 0
     for epoch in range(continue_epoch, epochs):
         # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
         if bad_epochs == 20:
@@ -121,7 +122,7 @@ def train(train_loader, decoder, criterion, optimizer, epoch):
 
     # Batches
     for i, (imagefeatures, sequence, sequencelength) in enumerate(train_loader):
-        data_time.update(time.time() - time_start)
+        data_time += (time.time() - time_start)
 
         # Move to GPU, if available
         imagefeatures = imagefeatures.to(device)
@@ -138,8 +139,8 @@ def train(train_loader, decoder, criterion, optimizer, epoch):
 
         # Remove timesteps that we didn't decode at, or are pads
         # pack_padded_sequence is an easy trick to do this
-        preds, _ = pack_padded_sequence(preds, decode_lengths, batch_first=True)
-        labels, _ = pack_padded_sequence(labels, decode_lengths, batch_first=True)
+        preds = pack_padded_sequence(preds, decode_lengths, batch_first=True).data
+        labels = pack_padded_sequence(labels, decode_lengths, batch_first=True).data
 
         # Calculate loss
 
@@ -189,12 +190,14 @@ def validate(val_loader, decoder, criterion):
 
     batch_time = 0
     losses = 0
+    loss_count = 0
     top5accs = 0
+    top5counts = 0
 
     time_start = time.time()
 
-    groundtruths = []  # references (true captions) for calculating BLEU-4 score
-    predictions = []  # hypotheses (predictions)
+    groundtruths = list()  # references (true captions) for calculating BLEU-4 score
+    predictions = list()  # hypotheses (predictions)
 
     # Batches
     with torch.no_grad(): 
@@ -204,6 +207,7 @@ def validate(val_loader, decoder, criterion):
             imagefeatures = imagefeatures.to(device)
             sequence = sequence.to(device)
             sequencelength = sequencelength.to(device)
+            sequences_generated = sequences_generated.to(device)
 
             preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, sequence, sequencelength)
 
@@ -215,8 +219,8 @@ def validate(val_loader, decoder, criterion):
             # Remove timesteps that we didn't decode at, or are pads
             # pack_padded_sequence is an easy trick to do this
             copy_preds = preds.clone()
-            preds, _ = pack_padded_sequence(preds, decode_lengths, batch_first=True)
-            labels, _ = pack_padded_sequence(labels, decode_lengths, batch_first=True)
+            preds = pack_padded_sequence(preds, decode_lengths, batch_first=True).data
+            labels = pack_padded_sequence(labels, decode_lengths, batch_first=True).data
 
             # Calculate loss
             loss = criterion(preds, labels)
@@ -237,8 +241,8 @@ def validate(val_loader, decoder, criterion):
                 print('Validation: [{0}/{1}]\t'
                       'Batch Time {batch_time:.3f})\t'
                       'Loss {loss:.4f} ({loss_ave:.4f}) )\t'
-                      'Top-5 Accuracy {top5:.3f} ({top5_ave:.3f})\t'.format(i, len(val_loader), batch_time,
-                                                                                loss, loss_ave, top5, top5_ave))
+                      'Top-5 Accuracy {top5:.3f} ({top5_ave:.3f})\t'.format(i, len(val_loader), batch_time = batch_time,
+                                                                               loss = loss, loss_ave = loss_ave, top5 = top5, top5_ave = top5_ave))
 
             # Store references (true captions), and hypothesis (prediction) for each image
             # If for n images, we have n hypotheses, and references a, b, c... for each image, we need -
@@ -262,10 +266,10 @@ def validate(val_loader, decoder, criterion):
 
 
     # Calculate BLEU-4 scores
-    bleu4 = corpus_bleu(predictions, groundtruths)
+    bleu4 = corpus_bleu(groundtruths, predictions)
     bleu4 = round(bleu4, 4)
 
-    print('\n * LOSS - {loss_avg:.3f}, TOP-5 ACCURACY - {top5_avg:.3f}, BLEU-4 - {bleu}\n'.format(loss_ave, top5_ave, bleu=bleu4))
+    print('\n * LOSS - {loss_avg:.3f}, TOP-5 ACCURACY - {top5_avg:.3f}, BLEU-4 - {bleu}\n'.format(loss_avg = loss_ave, top5_avg= top5_ave, bleu=bleu4))
 
     return bleu4
 
