@@ -145,7 +145,7 @@ def train(train_loader, decoder, criterion, optimizer, epoch):
 
         # Calculate loss
         
-        loss = criterion(preds, labels) + 0.01 * loss_ar
+        loss = criterion(preds, labels) #+ 0.01 * loss_ar
         
         optimizer.zero_grad()
         loss.backward()
@@ -211,7 +211,7 @@ def validate(val_loader, decoder, criterion):
             sequencelength = sequencelength.to(device)
             sequences_generated = sequences_generated.to(device)
 
-            preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, sequence, sequencelength)
+            preds, sorted_sequence, decode_lengths, sort_indexes, _ = decoder(imagefeatures, sequence, sequencelength)
 
 
             # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
