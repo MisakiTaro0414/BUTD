@@ -30,9 +30,8 @@ epochs = 50  # number of epochs to train for (if early stopping is not triggered
 bad_epochs = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
 batch_size = 100
 workers = 1  # for data-loading; right now, only 1 works with h5py
-best_bleu4 = 0.  # BLEU-4 score right now
+best_bleu4 = 0  # BLEU-4 score right now
 checkpoint = None  # path to checkpoint, None if none
-
 
 def main():
     """
@@ -49,14 +48,14 @@ def main():
 
     if checkpoint is None:
         decoder = DecoderAttModule(int(attentionSize), int(embSize), int(decoderSize), len(mapping),featureSize=2048, dropout=0.5)
-
+        best_bleu4_score = 0
         optimizer = torch.optim.Adamax(params=filter(lambda x: x.requires_grad, decoder.parameters()))
 
     else:
         checkpoint = torch.load(checkpoint)
         continue_epoch = checkpoint['epoch'] + 1
         bad_epochs = checkpoint['bad_epochs']
-        best_bleu4 = checkpoint['bleu-4']
+        best_bleu4_score = checkpoint['bleu-4']
         decoder = checkpoint['decoder']
         optimizer = checkpoint['optimizer']
        
@@ -71,7 +70,6 @@ def main():
     val_loader = torch.utils.data.DataLoader(CustomDataset(data_root, data_name, 'VAL'), batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
  
     # Epochs
-    best_bleu4_score = 0
     for epoch in range(continue_epoch, epochs):
         # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
         if bad_epochs == 20:
@@ -98,6 +96,7 @@ def main():
 
         # Save checkpoint
         save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
+
 
 
 def train(train_loader, decoder, criterion, optimizer, epoch):

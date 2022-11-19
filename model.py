@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import torchvision
 from torch.nn.utils.weight_norm import weight_norm
+import torch.nn.functional as F
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -39,8 +40,8 @@ class AttModule(nn.Module):
     def forward(self, image, h1):
         """
         Forward propagation.
-        image: encoded images - SHAPE: (batch_size, 36, features_dim)
-        h1: previous decoder output - SHAPE: (batch_size, decoder_dim)
+        image: encoded images - SHAPE: (batchSize, 36, features_dim)
+        h1: previous decoder output - SHAPE: (batchSize, decoder_dim)
         """
 
         # Shape: (batch size, 36, attention_dim)
@@ -103,7 +104,6 @@ class DecoderAttModule(nn.Module):
         
         """ Scoring Layers for Vocabulary """
         self.linear = weight_norm(nn.Linear(decodeSize, vocabSize))  
-        self.linear2 = weight_norm(nn.Linear(decodeSize, vocabSize))
         
         self.init_weights() 
 
@@ -132,9 +132,9 @@ class DecoderAttModule(nn.Module):
 
     def forward(self, feats, sequences, sizes):
         """
-        feats: encoded images - SHAPE: (batch_size, enc_image_size, enc_image_size, encoder_dim)
-        sizes: caption lengths - SHAPE: (batch_size, 1)
-        sequences: encoded captions - SHAPE: (batch_size, max_caption_length)
+        feats: encoded images - SHAPE: (batchSize, enc_image_size, enc_image_size, encoder_dim)
+        sizes: caption lengths - SHAPE: (batchSize, 1)
+        sequences: encoded captions - SHAPE: (batchSize, max_caption_length)
         OUTPUT: vocab scores, sorted caption sequences, sizes, weights, indices etc.
         """
 
@@ -162,6 +162,7 @@ class DecoderAttModule(nn.Module):
 
         # VOCAB SCORING
         preds = torch.zeros(batchSize, max(decode_lengths), vocabSize).to(device)
+
         
         """
         1) Hidden States, Mean-Pooled Features, Word Embeddings -> Top-Down Attention Model
@@ -187,3 +188,14 @@ class DecoderAttModule(nn.Module):
             preds[:bSize, timestep, :] = predictions
 
         return preds, sequences, decode_lengths, positions
+
+
+
+
+
+
+
+
+
+
+            

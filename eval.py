@@ -1,38 +1,35 @@
 import torch.backends.cudnn as cudnn
 import torch.optim
+import torch.nn.functional as F
 import torch.utils.data
 import torchvision.transforms as transforms
+from nltk.translate.bleu_score import corpus_bleu
+from scorer import compute_metrics
 from datasets import *
 from utils import *
-from nltk.translate.bleu_score import corpus_bleu
-import torch.nn.functional as F
 from tqdm import tqdm
-from nlgeval import NLGEval
 
-# Parameters
-data_folder = 'final_dataset'  # folder with data files saved by create_input_files.py
+
+data_root = 'final_dataset'  # folder with data files saved by create_input_files.py
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-checkpoint_file = 'BEST_34checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # model checkpoint
+checkpoint_file = 'results/BEST_43checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # model checpoint
 
-word_map_file = 'WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'  # word map, ensure it's the same the data was encoded with and the model was trained with
+mapping_file = 'WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'  # word map, ensure it's the same the data was encoded with and the model was trained with
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 
+mapping_file = os.path.join(data_root, 'WORDMAP_' + data_name + '.json')
+with open(mapping_file, 'r') as j:
+    mapping = json.load(j)
+reverse_mapping = {value: key  for key, value in mapping.items()}
+vocabSize = len(reverse_mapping)
 # Load model
 torch.nn.Module.dump_patches = True
-checkpoint = torch.load(checkpoint_file,map_location = device)
+checkpoint = torch.load(checkpoint_file, map_location = device)
 decoder = checkpoint['decoder']
 decoder = decoder.to(device)
-decoder.eval()
+decoder.eval() # turn on evaluation mode 
 
-nlgeval = NLGEval()  # loads the evaluator
-
-# Load word map (word2ix)
-word_map_file = os.path.join(data_folder, 'WORDMAP_' + data_name + '.json')
-with open(word_map_file, 'r') as j:
-    word_map = json.load(j)
-rev_word_map = {v: k for k, v in word_map.items()}
-vocab_size = len(word_map)
 
 def evaluate(beam_size):
     """
@@ -40,126 +37,96 @@ def evaluate(beam_size):
     :param beam_size: beam size at which to generate captions for evaluation
     :return: Official MSCOCO evaluator scores - bleu4, cider, rouge, meteor
     """
+    groundtruths = list()  # true captions, list of lists as each image may have several truth captions
+    predictions = list()  # predictions , list of predictions
     # DataLoader
-    loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, data_name, 'TEST'),
-        batch_size=1, shuffle=True, num_workers=1, pin_memory=torch.cuda.is_available())
+    test_loader = torch.utils.data.DataLoader(CustomDataset(data_root, data_name, 'TEST'), batch_size=1, shuffle=True, num_workers=1, pin_memory=torch.cuda.is_available())
+    for i, (imagefeatures, sequence, sequencelength, sequences_generated) in enumerate(tqdm(test_loader)):      
+        k = beam_size  
+        imagefeatures = imagefeatures.to(device)
+        sequence = sequence.to(device)
+        sequencelength = sequencelength.to(device)
+        sequences_generated = sequences_generated.to(device)
+        imagefeatures_mean = torch.mean(imagefeatures, dim=1).expand(k, 2048)  
 
-    # Lists to store references (true captions), and hypothesis (prediction) for each image
-    # If for n images, we have n hypotheses, and references a, b, c... for each image, we need -
-    # references = [[ref1a, ref1b, ref1c], [ref2a, ref2b], ...], hypotheses = [hyp1, hyp2, ...]
-    references = list()
-    hypotheses = list()
-
-    # For each image
-    for i, (image_features, caps, caplens, allcaps) in enumerate(
-            tqdm(loader, desc="EVALUATING AT BEAM SIZE " + str(beam_size))):
-
-        k = beam_size
-
-        # Move to GPU device, if available
-        image_features = image_features.to(device)  # (1, 3, 256, 256)
-        image_features_mean = image_features.mean(1)
-        image_features_mean = image_features_mean.expand(k,2048)
-
-        # Tensor to store top k previous words at each step; now they're just <start>
-        k_prev_words = torch.LongTensor([[word_map['<start>']]] * k).to(device)  # (k, 1)
-
-        # Tensor to store top k sequences; now they're just <start>
-        seqs = k_prev_words  # (k, 1)
-
-        # Tensor to store top k sequences' scores; now they're just 0
-        top_k_scores = torch.zeros(k, 1).to(device)  # (k, 1)
+        #Initialization step
+        best_k_scores = torch.zeros(k, 1).to(device)
+        prev_k_sequences  = torch.LongTensor([[mapping['<start>']]] * k).to(device)  
+        k_sequences = prev_k_sequences
+        hidden1, cell1 = decoder.init_hidden_state(k)  
+        hidden2, cell2 = decoder.init_hidden_state(k) 
 
         # Lists to store completed sequences and scores
         complete_seqs = list()
         complete_seqs_scores = list()
-
-        # Start decoding
-        step = 1
-        h1, c1 = decoder.init_hidden_state(k)  # (batch_size, decoder_dim)
-        h2, c2 = decoder.init_hidden_state(k)
-
-        # s is a number less than or equal to k, because sequences are removed from this process once they hit <end>
+        los = 1 #length of sequence
+        
+        # s is a number less than or equal to , because sequences are removed from this process once they hit <end>
         while True:
-
-            embeddings = decoder.embedding(k_prev_words).squeeze(1)  # (s, embed_dim)
-            h1,c1 = decoder.top_down_attention(
-                torch.cat([h2,image_features_mean,embeddings], dim=1),
-                (h1,c1))  # (batch_size_t, decoder_dim)
-            attention_weighted_encoding = decoder.attention(image_features,h1)
-            h2,c2 = decoder.language_model(
-                torch.cat([attention_weighted_encoding,h1], dim=1),(h2,c2))
-
-            scores = decoder.fc(h2)  # (s, vocab_size)
+            embeddings = decoder.embedding(prev_k_sequences).squeeze(1)
+            hidden1,cell1 = decoder.TD(torch.cat([hidden2,imagefeatures_mean,embeddings], dim=1),(hidden1,cell1)) 
+            attention_weighted_encoding = decoder.attModule(imagefeatures,hidden1)
+            hidden2,cell2 = decoder.lang_layer(torch.cat([attention_weighted_encoding,hidden1], dim=1),(hidden2,cell2))
+            scores = decoder.linear(hidden2)  # (s, vocab_size)
             scores = F.log_softmax(scores, dim=1)
 
             # Add
-            scores = top_k_scores.expand_as(scores) + scores  # (s, vocab_size)
-
-            # For the first step, all k points will have the same scores (since same k previous words, h, c)
-            if step == 1:
-                top_k_scores, top_k_words = scores[0].topk(k, 0, True, True)  # (s)
+            scores = torch.add(scores, best_k_scores.expand(scores.size()))  # (s, vocab_size)
+            #scores = best_k_scores.expand_as(scores) + scores
+            #Flatten the tensor, and select top k scores 
+            if los == 1:
+                best_k_scores, best_k_sequences = scores[0].topk(k, 0, True, True)  # (s)
             else:
-                # Unroll and find top scores, and their unrolled indices
-                top_k_scores, top_k_words = scores.view(-1).topk(k, 0, True, True)  # (s)
+                best_k_scores, best_k_sequences = scores.view(-1).topk(k, dim=0, largest=True, sorted=True)  # (s)
 
             # Convert unrolled indices to actual indices of scores
-            prev_word_inds = top_k_words / vocab_size  # (s)
-            next_word_inds = top_k_words % vocab_size  # (s)
+            prev_word_inds = torch.div(best_k_sequences, vocabSize, rounding_mode="trunc")  
+            word_inds = best_k_sequences % vocabSize  # (s)
 
-            # Add new words to sequences
-            seqs = torch.cat([seqs[prev_word_inds], next_word_inds.unsqueeze(1)], dim=1)  # (s, step+1)
+           #Update the sequences of words
+            k_sequences = torch.cat([k_sequences[prev_word_inds], word_inds.unsqueeze(1)], dim=1) 
 
             # Which sequences are incomplete (didn't reach <end>)?
-            incomplete_inds = [ind for ind, next_word in enumerate(next_word_inds) if
-                               next_word != word_map['<end>']]
-            complete_inds = list(set(range(len(next_word_inds))) - set(incomplete_inds))
+            continue_indices = [index for index, word in enumerate(word_inds) if word != mapping['<end>']]
+            end_indices = list(set(range(len(word_inds))).difference(set(continue_indices)))
 
-            # Set aside complete sequences
-            if len(complete_inds) > 0:
-                complete_seqs.extend(seqs[complete_inds].tolist())
-                complete_seqs_scores.extend(top_k_scores[complete_inds])
-            k -= len(complete_inds)  # reduce beam length accordingly
-
-            # Proceed with incomplete sequences
-            if k == 0:
+            if len(end_indices) > 0:
+                complete_seqs.extend(k_sequences[end_indices].tolist())
+                complete_seqs_scores.extend(best_k_scores[end_indices])
+            
+            k -= len(end_indices) 
+            if  k == 0:
                 break
-            seqs = seqs[incomplete_inds]
-            h1 = h1[prev_word_inds[incomplete_inds]]
-            c1 = c1[prev_word_inds[incomplete_inds]]
-            h2 = h2[prev_word_inds[incomplete_inds]]
-            c2 = c2[prev_word_inds[incomplete_inds]]
-            image_features_mean = image_features_mean[prev_word_inds[incomplete_inds]]
-            top_k_scores = top_k_scores[incomplete_inds].unsqueeze(1)
-            k_prev_words = next_word_inds[incomplete_inds].unsqueeze(1)
-
-            # Break if things have been going on too long
-            if step > 50:
+            # shrink the sequences to consider only incomplete sequences
+            hidden1 = hidden1[prev_word_inds[continue_indices]]
+            cell1 = cell1[prev_word_inds[continue_indices]]
+            hidden2 = hidden2[prev_word_inds[continue_indices]]
+            cell2 = cell2[prev_word_inds[continue_indices]]
+            imagefeatures_mean = imagefeatures_mean[prev_word_inds[continue_indices]]
+            k_sequences = k_sequences[continue_indices]
+            best_k_scores = best_k_scores[continue_indices].unsqueeze(1)
+            prev_k_sequences = word_inds[continue_indices].unsqueeze(1)
+            if los > 50:
                 break
-            step += 1
-
+            los += 1
+        
         i = complete_seqs_scores.index(max(complete_seqs_scores))
-        seq = complete_seqs[i]
+        best_sequence = complete_seqs[i]
+    
 
-        # References
-        img_caps = allcaps[0].tolist()
-        img_captions = list(
-            map(lambda c: [rev_word_map[w] for w in c if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}],
-                img_caps))  # remove <start> and pads
-        img_caps = [' '.join(c) for c in img_captions]
-        #print(img_caps)
-        references.append(img_caps)
+        cap = sequences_generated[0].tolist()
+        caps = list(
+            map(lambda c: [reverse_mapping[w] for w in c if w not in {mapping['<start>'], mapping['<end>'], mapping['<pad>']}], cap))  # remove <start> and pads
+        str_caps = [' '.join(c) for c in caps] #convert to string
+        groundtruths.append(str_caps)
+        prediction = ([reverse_mapping[w] for w in best_sequence if w not in {mapping['<start>'], mapping['<end>'], mapping['<pad>']}])
+        prediction = ' '.join(prediction)
+    
+        predictions.append(prediction)
 
-        # Hypotheses
-        hypothesis = ([rev_word_map[w] for w in seq if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}])
-        hypothesis = ' '.join(hypothesis)
-        #print(hypothesis)
-        hypotheses.append(hypothesis)
-        assert len(references) == len(hypotheses)
 
     # Calculate scores
-    metrics_dict = nlgeval.compute_metrics(references, hypotheses)
+    metrics_dict = compute_metrics(groundtruths, predictions)
     return metrics_dict
 
 

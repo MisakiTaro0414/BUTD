@@ -8,6 +8,7 @@ from collections import Counter
 from random import seed, choice, sample
 import pickle
 
+
 def create_input_files(dataset,karpathy_json_path,captions_per_image, min_word_freq,output_folder,max_len=100):
     """
     Creates input files for training, validation, and test data.
@@ -166,6 +167,28 @@ def save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, bes
     torch.save(state, filename)
     if best:
         torch.save(state, 'BEST_' + str(epoch) + filename)
+
+
+def save_checkpoint_rl(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
+    """
+    Saves model checkpoint.
+    :param data_name: base name of processed dataset
+    :param epoch: epoch number
+    :param bad_epochs: number of epochs since last improvement in BLEU-4 score
+    :param decoder: decoder model
+    :param decoder_optimizer: optimizer to update decoder's weights
+    :param bleu4: validation BLEU-4 score for this epoch
+    :param is_best: is this checkpoint the best so far?
+    """
+    state = {'epoch': epoch,
+             'bad_epochs': bad_epochs,
+             'bleu-4': bleu4,
+             'decoder': decoder,
+             'decoder_optimizer': optimizer}
+    filename = 'RL_checkpoint_' + data_name + '.pth.tar'
+    torch.save(state, filename)
+    if best:
+        torch.save(state, 'RL_BEST_' + str(epoch) + filename)
 
 
 def topk_accuracy(preds, labels, k):
