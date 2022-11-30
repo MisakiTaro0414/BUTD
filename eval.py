@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 data_root = 'final_dataset'  # folder with data files saved by create_input_files.py
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-checkpoint_file = 'results/BEST_43checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # model checpoint
+checkpoint_file = 'BEST_4BS20_checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # model checpoint
 
 mapping_file = 'WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'  # word map, ensure it's the same the data was encoded with and the model was trained with
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
@@ -42,7 +42,7 @@ def evaluate(beam_size):
     # DataLoader
     test_loader = torch.utils.data.DataLoader(CustomDataset(data_root, data_name, 'TEST'), batch_size=1, shuffle=True, num_workers=1, pin_memory=torch.cuda.is_available())
     for i, (imagefeatures, sequence, sequencelength, sequences_generated) in enumerate(tqdm(test_loader)):      
-        k = beam_size  
+        k = beam_size
         imagefeatures = imagefeatures.to(device)
         sequence = sequence.to(device)
         sequencelength = sequencelength.to(device)
@@ -65,7 +65,8 @@ def evaluate(beam_size):
         while True:
             embeddings = decoder.embedding(prev_k_sequences).squeeze(1)
             hidden1,cell1 = decoder.TD(torch.cat([hidden2,imagefeatures_mean,embeddings], dim=1),(hidden1,cell1)) 
-            attention_weighted_encoding = decoder.attModule(imagefeatures,hidden1)
+            #attention_weighted_encoding = decoder.attModule(imagefeatures,hidden1) #(base model)
+            attention_weighted_encoding, _ = decoder.attModule(imagefeatures,hidden1) 
             hidden2,cell2 = decoder.lang_layer(torch.cat([attention_weighted_encoding,hidden1], dim=1),(hidden2,cell2))
             scores = decoder.linear(hidden2)  # (s, vocab_size)
             scores = F.log_softmax(scores, dim=1)
@@ -110,8 +111,8 @@ def evaluate(beam_size):
                 break
             los += 1
         
-        i = complete_seqs_scores.index(max(complete_seqs_scores))
-        best_sequence = complete_seqs[i]
+        x = complete_seqs_scores.index(max(complete_seqs_scores))
+        best_sequence = complete_seqs[x]
     
 
         cap = sequences_generated[0].tolist()
@@ -128,6 +129,9 @@ def evaluate(beam_size):
     # Calculate scores
     metrics_dict = compute_metrics(groundtruths, predictions)
     return metrics_dict
+
+
+
 
 
 if __name__ == '__main__':

@@ -9,6 +9,7 @@ if torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
+# Attention Block
 class AttModule(nn.Module):
     """
     Attention Module for Architecture.
@@ -44,10 +45,10 @@ class AttModule(nn.Module):
         h1: previous decoder output - SHAPE: (batchSize, decoder_dim)
         """
 
-        # Shape: (batch size, 36, attention_dim)
+        # Shape: (batch size, attention_dim)
         h1_att = self.att_decoder(h1)
 
-        # Shape: (batch size, attention_dim)
+        # Shape: (batch size,36, attention_dim)
         img_att = self.att_feat(image)     
         
         # Shape: (batch size, 36)
@@ -61,7 +62,7 @@ class AttModule(nn.Module):
         # Shape: (batch size, featureSize)
         aw_images = torch.sum((image * sigmoid.unsqueeze(2)), dim=1) 
 
-        return aw_images
+        return aw_images, sigmoid
 
 
 class DecoderAttModule(nn.Module):
@@ -113,9 +114,7 @@ class DecoderAttModule(nn.Module):
         """
         self.linear.bias.data.fill_(0)
         self.linear.weight.data.uniform_(-0.1, 0.1)
-        self.embedding.weight.data.uniform_(-0.1, 0.1)
-
-        
+        self.embedding.weight.data.uniform_(-0.1, 0.1)  
 
     def init_hidden_state(self, batchSize):
         """
@@ -134,11 +133,14 @@ class DecoderAttModule(nn.Module):
         """
         feats: encoded images - SHAPE: (batchSize, enc_image_size, enc_image_size, encoder_dim)
         sizes: caption lengths - SHAPE: (batchSize, 1)
+        sals: salient features - SHAPE: ()
         sequences: encoded captions - SHAPE: (batchSize, max_caption_length)
         OUTPUT: vocab scores, sorted caption sequences, sizes, weights, indices etc.
         """
 
         vocabSize = self.vocabSize
+
+        featureSize = feats.size(1)*feats.size(1)
 
         batchSize = feats.size(0)
 
@@ -162,7 +164,7 @@ class DecoderAttModule(nn.Module):
 
         # VOCAB SCORING
         preds = torch.zeros(batchSize, max(decode_lengths), vocabSize).to(device)
-
+        attentions = torch.zeros(batchSize, max(decode_lengths), featureSize).to(device)
         
         """
         1) Hidden States, Mean-Pooled Features, Word Embeddings -> Top-Down Attention Model
@@ -175,23 +177,19 @@ class DecoderAttModule(nn.Module):
             # 1)
             hidden1,cell1 = self.TD(
                 torch.cat([hidden2[:bSize],featsAvg[:bSize],embeddings[:bSize, timestep, :]], dim=1),(hidden1[:bSize], cell1[:bSize]))
-            attention_weighted_encoding = self.attModule(feats[:bSize],hidden1[:bSize])
+            aw_images, sigmoid = self.attModule(feats[:bSize],hidden1[:bSize])
             
             # 2)
             hidden2,cell2 = self.lang_layer(
-                torch.cat([attention_weighted_encoding[:bSize],hidden1[:bSize]], dim=1),
+                torch.cat([aw_images[:bSize],hidden1[:bSize]], dim=1),
                 (hidden2[:bSize], cell2[:bSize]))
             
             # 3) - SHAPE: (bSize, vocabSize)
             predictions = self.linear(self.dropout(hidden2))
 
             preds[:bSize, timestep, :] = predictions
-
-        return preds, sequences, decode_lengths, positions
-
-
-
-
+            
+        return preds, sequences, decode_lengths, sigmoid, positions
 
 
 

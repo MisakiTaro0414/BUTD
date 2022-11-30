@@ -13,7 +13,6 @@ def fast_rcnn_inference_single_image(boxes, scores, image_shape, score_thresh, n
 
     scores = scores[:, :-1]
     num_bbox_reg_classes = boxes.shape[1] // 4
-    # Convert to Boxes to use the `clip` function ...
     boxes = Boxes(boxes.reshape(-1, 4))
     boxes.clip(image_shape)
     boxes = boxes.tensor.view(-1, num_bbox_reg_classes, 4)  # R x C x 4
@@ -35,7 +34,6 @@ def fast_rcnn_inference_single_image(boxes, scores, image_shape, score_thresh, n
     result.pred_boxes = Boxes(boxes)
     result.scores = scores
     result.pred_classes = max_classes[keep]
-    
     return result, keep
 
 class FasterRCNNBottomUp:
@@ -56,6 +54,7 @@ class FasterRCNNBottomUp:
             image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
             inputs = [{"image": image, "height": img_h, "width": img_w}]
             images = self.predictor.model.preprocess_image(inputs)
+
             features = self.predictor.model.backbone(images.tensor)
 
             # Generate proposals with RPN
@@ -67,8 +66,9 @@ class FasterRCNNBottomUp:
             box_features = self.predictor.model.roi_heads._shared_roi_transform(
                 features, proposal_boxes
             )
-            feature_pooled = box_features.mean(dim=[2, 3])  # (sum_proposals, 2048), pooled to 1x1
 
+            feature_pooled = box_features.mean(dim=[2, 3])  # (sum_proposals, 2048), pooled to 1x1
+            
             # Predict classes and boxes for each proposal.
             pred_class_logits, pred_proposal_deltas = self.predictor.model.roi_heads.box_predictor(feature_pooled)
             rcnn_outputs = FastRCNNOutputs(
@@ -78,7 +78,6 @@ class FasterRCNNBottomUp:
                 proposals,
                 self.predictor.model.roi_heads.smooth_l1_beta,
             )
-
             # Fixed-number NMS
             instances_list, ids_list = [], []
             probs_list = rcnn_outputs.predict_probs()
@@ -95,17 +94,10 @@ class FasterRCNNBottomUp:
                 instances_list.append(instances)
                 ids_list.append(ids)
             
+            instances = detector_postprocess(instances, img_h, img_w)
             roi_features = feature_pooled[ids].detach()
-            return roi_features
+            return instances, roi_features
 
-            # Post processing for features
-            
-            # features_list = feature_pooled.split(rcnn_outputs.num_preds_per_image) # (sum_proposals, 2048) --> [(p1, 2048), (p2, 2048), ..., (pn, 2048)]
-            # roi_features_list = []
-            # for ids, features in zip(ids_list, features_list):
-            #     roi_features_list.append(features[ids].detach())
-            
-            # outputs.append(roi_features_list)
 
    
     

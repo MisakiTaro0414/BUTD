@@ -53,7 +53,6 @@ class CustomDataset(Dataset):
 
         # ifd object considering all distribution of images
         ifd = self.ifd[seqnum // self.sequencesperimage]
-
         #image features coming from bottum up attention
         if  ifd[0] == "v":
             imagefeatures = torch.FloatTensor(self.validation_features[ifd[1]])
@@ -61,7 +60,7 @@ class CustomDataset(Dataset):
             imagefeatures = torch.FloatTensor(self.training_features[ifd[1]])
         
 
-        if self.split_name is "TRAIN":
+        if self.split_name == "TRAIN":
             return imagefeatures, sequence, sequencelength
         else:
             # In order to calculate BLEU-4 score, we need all sequences generated per image

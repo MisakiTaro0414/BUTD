@@ -1,7 +1,8 @@
-from bleu.bleu import Bleu
-from cider.cider import Cider
-from meteor.meteor import Meteor
-from rouge.rouge import Rouge
+from evaluation_metrics.bleu.bleu import Bleu
+from evaluation_metrics.cider.cider import Cider
+from evaluation_metrics.meteor.meteor import Meteor
+from evaluation_metrics.rouge.rouge import Rouge
+
 
 def _strip(s):
     return s.strip()
@@ -14,7 +15,7 @@ def compute_metrics(groundtruths, predictions):
         (Bleu(4), ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4"]),
         (Meteor(), "METEOR"),
         (Rouge(), "ROUGE_L"),
-        (Cider(), "CIDEr")
+        (Cider(), "CIDEr"),
     ]
     for metric, method in metrics:
         score, scores = metric.compute_score(gts, preds)

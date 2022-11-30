@@ -6,9 +6,12 @@ import torchvision.transforms as transforms
 from model import DecoderAttModule
 from datasets import *
 from utils import *
+from visualization import *
 
 
-checkpoint_file = 'results/BEST_43checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # model checpoint
+
+
+checkpoint_file = 'BEST_34checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # model checpoint
 data_root = 'final_dataset'  # folder with data files saved by create_input_files.py
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 mapping_file = os.path.join(data_root, 'WORDMAP_' + data_name + '.json')
@@ -34,17 +37,20 @@ def generate_caption(imagefeatures, beam_size):
     """
     k = beam_size  
     imagefeatures = imagefeatures.to(device)
-    imagefeatures_mean = torch.mean(imagefeatures, dim=1).expand(k, 2048)  
+    imagefeatures_mean = torch.mean(imagefeatures, dim=0).expand(k, 2048)  
 
     #Initialization step
     best_k_scores = torch.zeros(k, 1).to(device)
     prev_k_sequences  = torch.LongTensor([[mapping['<start>']]] * k).to(device)  
     k_sequences = prev_k_sequences
     hidden1, cell1 = decoder.init_hidden_state(k)  
-    hidden2, cell2 = decoder.init_hidden_state(k) 
+    hidden2, cell2 = decoder.init_hidden_state(k)
+
+    k_sequences_attentions= torch.ones(k, 1, 36).to(device)
 
     # Lists to store completed sequences and scores
     complete_seqs = list()
+    complete_seqs_attentions = list()
     complete_seqs_scores = list()
     los = 1 #length of sequence
     
@@ -52,7 +58,7 @@ def generate_caption(imagefeatures, beam_size):
     while True:
         embeddings = decoder.embedding(prev_k_sequences).squeeze(1)
         hidden1,cell1 = decoder.TD(torch.cat([hidden2,imagefeatures_mean,embeddings], dim=1),(hidden1,cell1)) 
-        attention_weighted_encoding = decoder.attModule(imagefeatures,hidden1)
+        attention_weighted_encoding, sigmoid = decoder.attModule(imagefeatures, hidden1)
         hidden2,cell2 = decoder.lang_layer(torch.cat([attention_weighted_encoding,hidden1], dim=1),(hidden2,cell2))
         scores = decoder.linear(hidden2)  # (s, vocab_size)
         scores = F.log_softmax(scores, dim=1)
@@ -71,7 +77,10 @@ def generate_caption(imagefeatures, beam_size):
         word_inds = best_k_sequences % vocabSize  # (s)
 
         #Update the sequences of words
-        k_sequences = torch.cat([k_sequences[prev_word_inds], word_inds.unsqueeze(1)], dim=1) 
+        k_sequences = torch.cat([k_sequences[prev_word_inds], word_inds.unsqueeze(1)], dim=1)
+
+        k_sequences_attentions = torch.cat([k_sequences_attentions[prev_word_inds], sigmoid[prev_word_inds].unsqueeze(1)], dim=1)
+       
 
         # Which sequences are incomplete (didn't reach <end>)?
         continue_indices = [index for index, word in enumerate(word_inds) if word != mapping['<end>']]
@@ -79,6 +88,7 @@ def generate_caption(imagefeatures, beam_size):
 
         if len(end_indices) > 0:
             complete_seqs.extend(k_sequences[end_indices].tolist())
+            complete_seqs_attentions.extend(k_sequences_attentions[end_indices].tolist())
             complete_seqs_scores.extend(best_k_scores[end_indices])
         
         k -= len(end_indices) 
@@ -98,17 +108,20 @@ def generate_caption(imagefeatures, beam_size):
         los += 1
     
     i = complete_seqs_scores.index(max(complete_seqs_scores))
+    best_attentions = complete_seqs_attentions[i]
     best_sequence = complete_seqs[i]
 
     prediction = ([reverse_mapping[w] for w in best_sequence if w not in {mapping['<start>'], mapping['<end>'], mapping['<pad>']}])
     prediction = ' '.join(prediction)
-    return prediction
+
+    best_attentions = torch.FloatTensor(best_attentions)
+    return prediction, best_sequence, best_attentions
 
 
 if __name__ == '__main__':
     beam_size = 5
-    #img = torch.rand.randint(1,36,2048)
-    img = torch.load("boxes.pt")
-    img = img.unsqueeze(0)
-    prediction = generate_caption(img, beam_size)
+    boxes = torch.load("dog_boxes.pt")
+    prediction, best_sequence, best_attentions = generate_caption(boxes, beam_size)
+    torch.save(best_attentions,"dog_attentions.pt", _use_new_zipfile_serialization=False)
+    torch.save(best_sequence, "dog_sequence.pt", _use_new_zipfile_serialization=False)
     print(prediction)

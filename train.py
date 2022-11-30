@@ -5,7 +5,10 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from ARNet import  DecoderAttModule
+from Adap_Att import  DecoderAdap_AttModule
+#from ARNet_model import DecoderAttModule
+#from model import DecoderAttModule
+#from ablation_model import DecoderAblationAttModule
 from datasets import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
@@ -29,7 +32,8 @@ continue_epoch = 0
 epochs = 50  # number of epochs to train for (if early stopping is not triggered)
 bad_epochs = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
 batch_size = 100
-workers = 1  # for data-loading; right now, only 1 works with h5py
+#batch_size = 20
+workers = 1 # for data-loading; right now, only 1 works with h5py
 best_bleu4 = 0  # BLEU-4 score right now
 checkpoint = None  # path to checkpoint, None if none
 
@@ -47,9 +51,9 @@ def main():
 
 
     if checkpoint is None:
-        decoder = DecoderAttModule(int(attentionSize), int(embSize), int(decoderSize), len(mapping),featureSize=2048, dropout=0.5)
+        decoder = DecoderAdap_AttModule(int(attentionSize), int(embSize), int(decoderSize), len(mapping), featureSize=2048, dropout=0.5)
         best_bleu4_score = 0
-        optimizer = torch.optim.Adamax(params=filter(lambda x: x.requires_grad, decoder.parameters()))
+        optimizer = torch.optim.Adamax(params=filter(lambda x: x.requires_grad, decoder.parameters()), lr = 4e-4)
 
     else:
         checkpoint = torch.load(checkpoint)
@@ -57,7 +61,7 @@ def main():
         bad_epochs = checkpoint['bad_epochs']
         best_bleu4_score = checkpoint['bleu-4']
         decoder = checkpoint['decoder']
-        optimizer = checkpoint['optimizer']
+        optimizer = checkpoint['decoder_optimizer']
        
     # Move to GPU, if available
     decoder = decoder.to(device)
@@ -95,7 +99,10 @@ def main():
             print("\nEpochs since last improvement: %d\n" % (bad_epochs,))
 
         # Save checkpoint
-        save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
+        save_checkpoint_sentinel(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
+        #save_checkpoint_arnet(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
+        #save_checkpoint_arnet_new(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
+        #save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
 
 
 
@@ -130,8 +137,8 @@ def train(train_loader, decoder, criterion, optimizer, epoch):
         sequencelength = sequencelength.to(device)
 
         # Forward prop.
-        preds, sorted_sequence, decode_lengths, sort_indexes, loss_ar = decoder(imagefeatures, sequence, sequencelength)
-  
+        preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, sequence, sequencelength)
+        #preds, sorted_sequence, decode_lengths, sort_indexes, loss_ar  = decoder(imagefeatures, sequence, sequencelength)
         #Max-pooling across predicted words across time steps for discriminative supervision
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
@@ -144,7 +151,7 @@ def train(train_loader, decoder, criterion, optimizer, epoch):
 
         # Calculate loss
         
-        loss = criterion(preds, labels) #+ 0.01 * loss_ar
+        loss = criterion(preds, labels) #+ loss_ar
         
         optimizer.zero_grad()
         loss.backward()
@@ -210,7 +217,8 @@ def validate(val_loader, decoder, criterion):
             sequencelength = sequencelength.to(device)
             sequences_generated = sequences_generated.to(device)
 
-            preds, sorted_sequence, decode_lengths, sort_indexes, _ = decoder(imagefeatures, sequence, sequencelength)
+            preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, sequence, sequencelength)
+            #preds, sorted_sequence, decode_lengths,sort_indexes, loss_ar= decoder(imagefeatures, sequence, sequencelength)
 
 
             # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
@@ -224,7 +232,7 @@ def validate(val_loader, decoder, criterion):
             labels = pack_padded_sequence(labels, decode_lengths, batch_first=True).data
 
             # Calculate loss
-            loss = criterion(preds, labels)
+            loss = criterion(preds, labels) #+ loss_ar
 
             # Keep track of metrics
             top5 = topk_accuracy(preds, labels, 5)
