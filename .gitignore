@@ -3,4 +3,4 @@ data/*
 bottom-up_features/*
 final_dataset/*
 results/*
-total_predictions/*
+predictions/*

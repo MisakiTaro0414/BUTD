@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 data_root = 'final_dataset'  # folder with data files saved by create_input_files.py
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-checkpoint_file = 'results/new_ARNet_BEST_31new_ARNet_checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # model checpoint
+checkpoint_file = 'Ablation+ARNetcoco_5_cap_per_img_5_min_word_freq.pth.tar'  # model checpoint
 
 mapping_file = 'WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'  # word map, ensure it's the same the data was encoded with and the model was trained with
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
@@ -64,12 +64,16 @@ def evaluate(beam_size):
         # s is a number less than or equal to , because sequences are removed from this process once they hit <end>
         while True:
             embeddings = decoder.embedding(prev_k_sequences).squeeze(1)
-            hidden1,cell1 = decoder.TD(torch.cat([hidden2,imagefeatures_mean,embeddings], dim=1),(hidden1,cell1)) 
-            attention_weighted_encoding = decoder.attModule(imagefeatures,hidden1) #(base model)
-            #attention_weighted_encoding, _ = decoder.attModule(imagefeatures,hidden1) 
+            hidden1,cell1 = decoder.TD(torch.cat([hidden2,imagefeatures_mean,embeddings], dim=1),(hidden1,cell1))
+
+            gate = decoder.sigmoid((decoder.gate_embedding_weight(embeddings)) + decoder.gate_hidden_weight(hidden1)) 
+            #attention_weighted_encoding = decoder.attModule(imagefeatures,hidden1) #(base model)
+            sent = gate * torch.tanh(cell1)
+            attention_weighted_encoding  = decoder.adap_attModule(imagefeatures,hidden1,sent) 
             hidden2,cell2 = decoder.lang_layer(torch.cat([attention_weighted_encoding,hidden1], dim=1),(hidden2,cell2))
-            scores = decoder.linear(hidden2)  # (s, vocab_size)
+            scores = decoder.linear_hidden(hidden2) + decoder.linear_image(attention_weighted_encoding)  # (s, vocab_size)
             scores = F.log_softmax(scores, dim=1)
+            
 
             # Add
             scores = torch.add(scores, best_k_scores.expand(scores.size()))  # (s, vocab_size)
@@ -90,7 +94,6 @@ def evaluate(beam_size):
             # Which sequences are incomplete (didn't reach <end>)?
             continue_indices = [index for index, word in enumerate(word_inds) if word != mapping['<end>']]
             end_indices = list(set(range(len(word_inds))).difference(set(continue_indices)))
-
             if len(end_indices) > 0:
                 complete_seqs.extend(k_sequences[end_indices].tolist())
                 complete_seqs_scores.extend(best_k_scores[end_indices])

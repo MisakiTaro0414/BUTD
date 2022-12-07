@@ -4,12 +4,9 @@ from evaluation_metrics.meteor.meteor import Meteor
 from evaluation_metrics.rouge.rouge import Rouge
 
 
-def _strip(s):
-    return s.strip()
-
 def compute_metrics(groundtruths, predictions):
-    gts = {idx: strippedlines for (idx, strippedlines) in enumerate(groundtruths)}
-    preds = {idx: [lines.strip()] for (idx, lines) in enumerate(predictions)}
+    gts = {index: lines for (index, lines) in enumerate(groundtruths)}
+    preds = {index: [lines.strip()] for (index, lines) in enumerate(predictions)}
     eval_scores = {}
     metrics = [
         (Bleu(4), ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4"]),

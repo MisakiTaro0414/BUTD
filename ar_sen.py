@@ -4,12 +4,9 @@ import torchvision
 from torch.nn.utils.weight_norm import weight_norm
 import torch.nn.functional as F
 
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-else:
-    device = torch.device("cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class AblationAttModule(nn.Module):
+class Adap_AttModule(nn.Module):
     """
     Attention Module for Architecture.
     """
@@ -20,51 +17,68 @@ class AblationAttModule(nn.Module):
         decodeSize: dimension of RNN (decode)
         attSize: dimension provided by attention module
         """
-        super(AblationAttModule, self).__init__()
+        super(Adap_AttModule, self).__init__()
 
-        self.relu = nn.ReLU()
 
         # process image
         self.att_feat = weight_norm(nn.Linear(featureSize, attSize))  
         
         self.softmax = nn.Softmax(dim=1)
+          
+        self.relu = nn.ReLU()
 
         # process decoded values
         self.att_decoder = weight_norm(nn.Linear(decodeSize, attSize))  
+        
+        self.att_sent = weight_norm(nn.Linear(decodeSize, attSize))
+
+        self.weight_sent = weight_norm(nn.Linear(decodeSize, featureSize))
         
         # for softmax
         self.att = weight_norm(nn.Linear(attSize, 1))
         
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, image, h1):
+    def forward(self, image, h1, sent):
         """
         Forward propagation.
         image: encoded images - SHAPE: (batchSize, 36, features_dim)
         h1: previous decoder output - SHAPE: (batchSize, decoder_dim)
+        sent: visual sentinel vector - SHAPE: (batchSize, decoder_dim)
         """
 
         # Shape: (batch size, attention_dim)
         h1_att = self.att_decoder(h1)
 
-        # Shape: (batch size,36, attention_dim)
-        img_att = self.att_feat(image)     
+        # Shape: (batch size, 36, attention_dim)
+        img_att = self.att_feat(image)  
+
+        # Shape : (batch size, attention_dim)
+        sent_att = self.att_sent(sent)
         
         # Shape: (batch size, 36)
         att1 = self.dropout(self.relu(h1_att.unsqueeze(1) + img_att))
         att2 = self.att(att1)
-        attention = att2.squeeze(2)  
+        attention_img = att2.squeeze(2)  
+        sentinel_att1 = self.dropout(self.relu(sent_att + h1_att))
+        sentinel_att = self.att(sentinel_att1)
+        #(batch size, 37)
+        attention = torch.cat([attention_img, sentinel_att], dim=1)
         
-        # Shape: (batch size, 36)
+        # Shape: (batch size, 37)
         sigmoid = self.softmax(attention)  
         
-        # Shape: (batch size, featureSize)
-        aw_images = torch.sum((image * sigmoid.unsqueeze(2)), dim=1) 
 
+        aw_sentinel = sent * sigmoid[:, -1].unsqueeze(1) 
+        # Shape: (batchsize, featureSize)
+        aw_sentinel = self.weight_sent(self.dropout(aw_sentinel)) 
+        aw_images = torch.sum((image * sigmoid[:, :-1].unsqueeze(2)), dim=1) + aw_sentinel
         return aw_images
 
 
-class DecoderAblationAttModule(nn.Module):
+
+
+class DecoderARnetAdap_AttModule(nn.Module):
     """
     Decoder.
     """
@@ -78,7 +92,7 @@ class DecoderAblationAttModule(nn.Module):
         featureSize: feature size of encoded images
         dropout: dropout
         """
-        super(DecoderAblationAttModule, self).__init__()
+        super(DecoderARnetAdap_AttModule, self).__init__()
 
         self.attSize = attSize
         self.decodeSize = decodeSize
@@ -87,23 +101,37 @@ class DecoderAblationAttModule(nn.Module):
         self.embedSize = embedSize
         self.dropout = dropout
 
+        self.arnet_weight = 0.005
+
         """ Attention Module """
-        self.attModule = AblationAttModule(featureSize, decodeSize, attSize) 
+        self.adap_attModule = Adap_AttModule(featureSize, decodeSize, attSize) 
+
 
         """ Embedding """
         self.embedding = nn.Embedding(vocabSize, embedSize)
         
         # LSTM layer for top-down attention
-        self.LSTM = nn.LSTMCell(embedSize + featureSize, decodeSize, bias=True)
+        self.TD = nn.LSTMCell(embedSize + featureSize + decodeSize, decodeSize, bias=True)
         
+        self.gate_hidden_weight = weight_norm(nn.Linear(decodeSize, decodeSize))
+
+        self.gate_embedding_weight = weight_norm(nn.Linear(embedSize, decodeSize))
+
         # Dropout
         self.dropout = nn.Dropout(p=self.dropout)
         
-        # Language LSTM layer        
+        # Language LSTM layer
+        self.lang_layer = nn.LSTMCell(featureSize + decodeSize, decodeSize, bias=True)
+        
         """ Scoring Layers for Vocabulary """
         self.linear_hidden = weight_norm(nn.Linear(decodeSize, vocabSize))  
 
         self.linear_image = weight_norm(nn.Linear(featureSize, vocabSize))
+ 
+        self.sigmoid = nn.Sigmoid()
+
+        self.hidden_lstm = nn.LSTMCell(decodeSize, decodeSize, bias = True)
+        self.arnet_linear = nn.Linear(decodeSize, decodeSize)
         
         self.init_weights() 
 
@@ -156,6 +184,7 @@ class DecoderAblationAttModule(nn.Module):
 
         # Initialize LSTM state
         hidden1, cell1 = self.init_hidden_state(batchSize)  # (batchSize, decodeSize)
+        hidden2, cell2 = self.init_hidden_state(batchSize)  # (batchSize, decodeSize)
         
         decode_lengths = torch.Tensor.tolist((sizes - 1))
 
@@ -168,27 +197,50 @@ class DecoderAblationAttModule(nn.Module):
         2) Top Down Model, Bottom-Up Features -> Attention Module
         3) Weighed Features, Hidden States -> Language Model
         """
+        hidden_states1 = list()
+        loss_ar = 0
         for timestep in range(max(decode_lengths)):
             bSize = sum([seq_length > timestep for seq_length in decode_lengths])
+
+            # (bSize, decoder_dim)
             
-            # 1) (bSize, featureSize)
-            aw_images = self.attModule(feats[:bSize],hidden1[:bSize])
-            # 2) (bsize, decoderSize)
-            hidden1,cell1 = self.LSTM(torch.cat([aw_images[:bSize],embeddings[:bSize, timestep, :]], dim=1),(hidden1[:bSize], cell1[:bSize]))  
+            # 1)
+            hidden1, cell1 = self.TD(
+                torch.cat([hidden2[:bSize],featsAvg[:bSize],embeddings[:bSize, timestep, :]], dim=1),(hidden1[:bSize], cell1[:bSize]))
+            
+
+            gate = self.sigmoid(self.gate_embedding_weight(self.dropout(embeddings[:bSize, timestep, :]))
+                                   + self.gate_hidden_weight(self.dropout(hidden1[:bSize])))    # (batch_size_t, decoder_dim)
+
+            sent = gate * torch.tanh(cell1[:bSize])
+            aw_images = self.adap_attModule(feats[:bSize], hidden1[:bSize], sent)
+
+            # 2)
+            hidden2,cell2 = self.lang_layer(
+                torch.cat([aw_images[:bSize],hidden1[:bSize]], dim=1),
+                (hidden2[:bSize], cell2[:bSize]))
+            
+            if timestep != 0:
+                prev_arnet_cell1 = hidden_states1[timestep-1][2][:bSize]
+                prev_arnet_hidden1 = hidden_states1[timestep-1][1][:bSize]
+                prev_hidden1 = hidden_states1[timestep-1][0][:bSize]
+                arnet_hidden1, arnet_cell1 = self.hidden_lstm(hidden1, (prev_arnet_hidden1, prev_arnet_cell1))
+                pred_prev_hidden1 = self.arnet_linear(arnet_hidden1)
+
+                diff = pred_prev_hidden1 - prev_hidden1
+
+                cur_arnet_loss = torch.sum(torch.sum(torch.mul(diff, diff), dim=1))
+                cur_arnet_loss = cur_arnet_loss / bSize * self.arnet_weight
+                loss_ar += cur_arnet_loss
+            else:
+                 arnet_hidden1, arnet_cell1 = self.hidden_lstm(hidden1, self.init_hidden_state(bSize))
+
+            hidden_states1.append((hidden1, arnet_hidden1, arnet_cell1))    
+
+
             # 3) - SHAPE: (bSize, vocabSize)
-            predictions = self.linear_hidden(self.dropout(hidden1)) + self.linear_image(self.dropout(aw_images))
+            predictions = self.linear_hidden(self.dropout(hidden2)) + self.linear_image(self.dropout(aw_images))
 
             preds[:bSize, timestep, :] = predictions
 
-        return preds, sequences, decode_lengths, positions
-
-
-
-
-
-
-
-
-
-
-            
+        return preds, sequences, decode_lengths, positions, loss_ar

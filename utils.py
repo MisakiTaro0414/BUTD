@@ -234,6 +234,27 @@ def save_checkpoint_arnet_new(data_name, epoch, bad_epochs, decoder, optimizer, 
     if best:
         torch.save(state, 'new_ARNet_BEST_' + str(epoch) + filename)
 
+def save_checkpoint_abl_ar(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
+    """
+    Saves model checkpoint.
+    :param data_name: base name of processed dataset
+    :param epoch: epoch number
+    :param bad_epochs: number of epochs since last improvement in BLEU-4 score
+    :param decoder: decoder model
+    :param decoder_optimizer: optimizer to update decoder's weights
+    :param bleu4: validation BLEU-4 score for this epoch
+    :param is_best: is this checkpoint the best so far?
+    """
+    state = {'epoch': epoch,
+             'bad_epochs': bad_epochs,
+             'bleu-4': bleu4,
+             'decoder': decoder,
+             'decoder_optimizer': optimizer}
+    filename = 'Ablation+ARNet_checkpoint_' + data_name + '.pth.tar'
+    torch.save(state, filename)
+    if best:
+        torch.save(state, 'BEST_' + str(epoch) + filename)
+
 
 def topk_accuracy(preds, labels, k):
     """

@@ -37,9 +37,6 @@ if __name__ == '__main__':
             images_training = pickle.load(f)
         with open(validation_file, "rb") as f:
             images_validation = pickle.load(f)
-
-        #images_training = pickle.load(open(training_file, "rb"))
-        #images_validation = pickle.load(open(validation_file, "rb"))
     else:
         images_training = utils.load_imageid('../data/train2014')
         images_validation = utils.load_imageid('../data/val2014')
@@ -91,15 +88,12 @@ if __name__ == '__main__':
             w_box = boundingboxes[:, 2] - boundingboxes[:, 0]
             h_box = boundingboxes[:, 3] - boundingboxes[:, 1]
 
-            # Scaling image dimensions
             s_w = w_box / width_image
-            s_h = h_box / height_image
-            
-            # Scaling bounding box dimensions
+            s_h = h_box / height_image        
             s_x = boundingboxes[:, 0] / width_image
             s_y = boundingboxes[:, 1] / height_image
 
-            """"""
+            
             w_box = w_box[..., np.newaxis]
             h_box = h_box[..., np.newaxis]
 
@@ -108,17 +102,10 @@ if __name__ == '__main__':
             
             s_x = s_x[..., np.newaxis]
             s_y = s_y[..., np.newaxis]
-            """"""
             
-            feats_space = np.concatenate(
-                (s_x,
-                 s_y,
-                 s_x + s_w,
-                 s_y + s_h,
-                 s_w,
-                 s_h),
-                axis=1)
-
+            
+            feats_space = np.concatenate((s_x, s_y, s_x + s_w, s_y + s_h, s_w, s_h), axis=1)
+            
             if id_image in images_training:
                 images_training.remove(id_image)
                 ind_train[id_image] = count_train

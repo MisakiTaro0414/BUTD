@@ -120,8 +120,8 @@ def generate_caption(imagefeatures, beam_size):
 
 if __name__ == '__main__':
     beam_size = 5
-    boxes = torch.load("dog_boxes.pt")
+    boxes = torch.load("boxes.pt")
     prediction, best_sequence, best_attentions = generate_caption(boxes, beam_size)
-    torch.save(best_attentions,"dog_attentions.pt", _use_new_zipfile_serialization=False)
-    torch.save(best_sequence, "dog_sequence.pt", _use_new_zipfile_serialization=False)
+    torch.save(best_attentions,"b_attentions.pt", _use_new_zipfile_serialization=False)
+    torch.save(best_sequence, "b_sequence.pt", _use_new_zipfile_serialization=False)
     print(prediction)
