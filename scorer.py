@@ -3,7 +3,7 @@ from evaluation_metrics.cider.cider import Cider
 from evaluation_metrics.meteor.meteor import Meteor
 from evaluation_metrics.rouge.rouge import Rouge
 
-
+# Calculates the evaluation scores and return them in form of dictionary
 def compute_metrics(groundtruths, predictions):
     gts = {index: lines for (index, lines) in enumerate(groundtruths)}
     preds = {index: [lines.strip()] for (index, lines) in enumerate(predictions)}

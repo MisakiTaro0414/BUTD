@@ -27,8 +27,6 @@ decoder = checkpoint['decoder']
 decoder = decoder.to(device)
 
 
-
-
 def generate_caption(imagefeatures, beam_size):
     """
     Evaluation

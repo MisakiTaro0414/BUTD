@@ -10,15 +10,6 @@ import pickle
 
 
 def create_input_files(dataset,karpathy_json_path,captions_per_image, min_word_freq,output_folder,max_len=100):
-    """
-    Creates input files for training, validation, and test data.
-    :param dataset: name of dataset. Since bottom up features only available for coco, we use only coco
-    :param karpathy_json_path: path of Karpathy JSON file with splits and captions
-    :param captions_per_image: number of captions to sample per image
-    :param min_word_freq: words occuring less frequently than this threshold are binned as <unk>s
-    :param output_folder: folder to save files
-    :param max_len: don't sample captions longer than this length
-    """
 
     assert dataset in {'coco'}
 
@@ -148,38 +139,18 @@ def init_embedding(embeddings):
 
 
 def save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
-    """
-    Saves model checkpoint.
-    :param data_name: base name of processed dataset
-    :param epoch: epoch number
-    :param bad_epochs: number of epochs since last improvement in BLEU-4 score
-    :param decoder: decoder model
-    :param decoder_optimizer: optimizer to update decoder's weights
-    :param bleu4: validation BLEU-4 score for this epoch
-    :param is_best: is this checkpoint the best so far?
-    """
     state = {'epoch': epoch,
              'bad_epochs': bad_epochs,
              'bleu-4': bleu4,
              'decoder': decoder,
              'decoder_optimizer': optimizer}
-    filename = 'BS20_checkpoint_' + data_name + '.pth.tar'
+    filename = 'checkpoint_' + data_name + '.pth.tar'
     torch.save(state, filename)
     if best:
         torch.save(state, 'BEST_' + str(epoch) + filename)
 
 
 def save_checkpoint_sentinel(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
-    """
-    Saves model checkpoint.
-    :param data_name: base name of processed dataset
-    :param epoch: epoch number
-    :param bad_epochs: number of epochs since last improvement in BLEU-4 score
-    :param decoder: decoder model
-    :param decoder_optimizer: optimizer to update decoder's weights
-    :param bleu4: validation BLEU-4 score for this epoch
-    :param is_best: is this checkpoint the best so far?
-    """
     state = {'epoch': epoch,
              'bad_epochs': bad_epochs,
              'bleu-4': bleu4,
@@ -188,20 +159,11 @@ def save_checkpoint_sentinel(data_name, epoch, bad_epochs, decoder, optimizer, b
     filename = 'Sentinel_checkpoint_' + data_name + '.pth.tar'
     torch.save(state, filename)
     if best:
-        torch.save(state, 'Sentinel_BEST_' + str(epoch) + filename)
+        torch.save(state, 'BEST_' + str(epoch) + filename)
 
 
 def save_checkpoint_arnet(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
-    """
-    Saves model checkpoint.
-    :param data_name: base name of processed dataset
-    :param epoch: epoch number
-    :param bad_epochs: number of epochs since last improvement in BLEU-4 score
-    :param decoder: decoder model
-    :param decoder_optimizer: optimizer to update decoder's weights
-    :param bleu4: validation BLEU-4 score for this epoch
-    :param is_best: is this checkpoint the best so far?
-    """
+    
     state = {'epoch': epoch,
              'bad_epochs': bad_epochs,
              'bleu-4': bleu4,
@@ -210,62 +172,45 @@ def save_checkpoint_arnet(data_name, epoch, bad_epochs, decoder, optimizer, bleu
     filename = 'ARNet_checkpoint_' + data_name + '.pth.tar'
     torch.save(state, filename)
     if best:
-        torch.save(state, 'ARNet_BEST_' + str(epoch) + filename)
+        torch.save(state, 'BEST_' + str(epoch) + filename)
 
-
-def save_checkpoint_arnet_new(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
-    """
-    Saves model checkpoint.
-    :param data_name: base name of processed dataset
-    :param epoch: epoch number
-    :param bad_epochs: number of epochs since last improvement in BLEU-4 score
-    :param decoder: decoder model
-    :param decoder_optimizer: optimizer to update decoder's weights
-    :param bleu4: validation BLEU-4 score for this epoch
-    :param is_best: is this checkpoint the best so far?
-    """
+def save_checkpoint_arnet_sentinel(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
+    
     state = {'epoch': epoch,
              'bad_epochs': bad_epochs,
              'bleu-4': bleu4,
              'decoder': decoder,
              'decoder_optimizer': optimizer}
-    filename = 'new_ARNet_checkpoint_' + data_name + '.pth.tar'
+    filename = 'ARNet+Sentinel_checkpoint_' + data_name + '.pth.tar'
     torch.save(state, filename)
     if best:
-        torch.save(state, 'new_ARNet_BEST_' + str(epoch) + filename)
+        torch.save(state, 'BEST_' + str(epoch) + filename)
 
-def save_checkpoint_abl_ar(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
-    """
-    Saves model checkpoint.
-    :param data_name: base name of processed dataset
-    :param epoch: epoch number
-    :param bad_epochs: number of epochs since last improvement in BLEU-4 score
-    :param decoder: decoder model
-    :param decoder_optimizer: optimizer to update decoder's weights
-    :param bleu4: validation BLEU-4 score for this epoch
-    :param is_best: is this checkpoint the best so far?
-    """
+def save_checkpoint_saliency(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
+    
     state = {'epoch': epoch,
              'bad_epochs': bad_epochs,
              'bleu-4': bleu4,
              'decoder': decoder,
              'decoder_optimizer': optimizer}
-    filename = 'Ablation+ARNet_checkpoint_' + data_name + '.pth.tar'
+    filename = 'Saliency_checkpoint_' + data_name + '.pth.tar'
     torch.save(state, filename)
     if best:
         torch.save(state, 'BEST_' + str(epoch) + filename)
 
 
-def topk_accuracy(preds, labels, k):
-    """
-    Computes top-k accuracy, from predicted and true labels.
-    :param preds: scores from the model
-    :param targets: true labels
-    :param k: k in top-k accuracy
-    :return: top-k accuracy
-    """
-    batch_size = labels.size(0)
-    _, ind = preds.topk(k, 1, True, True)
-    correct = ind.eq(labels.view(-1, 1).expand_as(ind))
-    correct_total = correct.view(-1).float().sum()  # 0D tensor
-    return correct_total.item() * (100.0 / batch_size)
+
+def save_checkpoint_simplified(data_name, epoch, bad_epochs, decoder, optimizer, bleu4, best):
+    
+    state = {'epoch': epoch,
+             'bad_epochs': bad_epochs,
+             'bleu-4': bleu4,
+             'decoder': decoder,
+             'decoder_optimizer': optimizer}
+    filename = 'Simplified_checkpoint_' + data_name + '.pth.tar'
+    torch.save(state, filename)
+    if best:
+        torch.save(state, 'BEST_' + str(epoch) + filename)
+
+
+

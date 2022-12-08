@@ -19,9 +19,9 @@ def attention_bbox_interpolation(im, bboxes, att):
         x1, y1, x2, y2 = bbox
         opacity[int(y1):int(y2), int(x1):int(x2)] += weight.item()
     opacity = np.minimum(opacity, 1)
-
+    
     opacity = opacity[..., np.newaxis]   
-     
+
     vis_im = np.array(Image.fromarray(cmap(opacity, bytes=True), 'RGBA'))
     vis_im = vis_im.astype(im.dtype)
     vis_im = cv2.addWeighted(im, 0.7, vis_im, 0.5, 0)

@@ -5,56 +5,52 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-#from Adap_Att import  DecoderAdap_AttModule
-#from ARNet_model import DecoderAttModule
-#from model import DecoderAttModule
-from ar_sen import DecoderARnetAdap_AttModule
-#from ablation_model import DecoderAblationAttModule
 from datasets import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
+#from models.sentinel_model import  DecoderAdap_AttModule
+#from models.arnet_model import DecoderAttModule
+#from models.model import DecoderAttModule
+#from models.simplified_model import DecoderAblationAttModule
+#from models.arnet_sentinel_model import DecoderARnetAdap_AttModule
+from models.saliency_model import DecoderSaliency_AttModule
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
-cudnn.benchmark = True 
 
-# Data parameters
-data_root = 'final_dataset'  # folder with data files saved by create_input_files.py
-data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+cudnn.benchmark = True
 
-# Model parameters
-embSize = 1024  # dimension of word embeddings
-decoderSize = 1024  # dimension of decoder RNN
-attentionSize = 1024  # dimension of attention linear layers
+
+data_root = 'final_dataset' 
+data_name = 'coco_5_cap_per_img_5_min_word_freq'
+
+
+batch_size = 100
+embSize = 1024 
+decoderSize = 1024  
+attentionSize = 1024 
 dropout = 0.5
  
 
-# Training parameters
-continue_epoch = 0
-epochs = 50  # number of epochs to train for (if early stopping is not triggered)
-bad_epochs = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
-batch_size = 100
-#batch_size = 20
-workers = 1 # for data-loading; right now, only 1 works with h5py
-best_bleu4 = 0  # BLEU-4 score right now
-checkpoint = None # path to checkpoint, None if none
+
+continue_epoch = 0 # used in case of resuming the training
+bad_epochs = 0  # used for detecting early stopping or learning rate scheduler
+epochs = 50  
+best_bleu4_score = 0  # BLEU-4 score right now
+checkpoint = "BEST_1Saliency_checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar"  # path to checkpoint
 
 
 def main():
-    """
-    Training and validation.
-    """
+    
+    global best_bleu4_score, bad_epochs, checkpoint, continue_epoch, data_name, mapping
 
-    global best_bleu4, bad_epochs, checkpoint, continue_epoch, data_name, mapping
-
-    # Read word map
     mapping_file = os.path.join(data_root, 'WORDMAP_' + data_name + '.json')
     with open(mapping_file, 'r') as j:
         mapping = json.load(j)
 
 
     if checkpoint is None:
-        decoder = DecoderARnetAdap_AttModule(int(attentionSize), int(embSize), int(decoderSize), len(mapping), featureSize=2048, dropout=0.5)
-        best_bleu4_score = 0
+        # Specify the name of selected decoder
+        decoder = DecoderSaliency_AttModule(int(attentionSize), int(embSize), int(decoderSize), len(mapping), featureSize=2048, dropout=0.5)
         optimizer = torch.optim.Adamax(params=filter(lambda x: x.requires_grad, decoder.parameters()))
 
     else:
@@ -64,36 +60,35 @@ def main():
         best_bleu4_score = checkpoint['bleu-4']
         decoder = checkpoint['decoder']
         optimizer = checkpoint['decoder_optimizer']
-       
-    # Move to GPU, if available
+
     decoder = decoder.to(device)
 
-    #Loss function
     criterion = nn.CrossEntropyLoss().to(device)
 
-    # Custom dataloaders
-    train_loader = torch.utils.data.DataLoader(CustomDataset(data_root, data_name, 'TRAIN'), batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
-    val_loader = torch.utils.data.DataLoader(CustomDataset(data_root, data_name, 'VAL'), batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
-    #new_train_loader = torch.utils.data.DataLoader(NewCustomDataset(data_root, data_name, 'TRAIN'), batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
-    #new_val_loader = torch.utils.data.DataLoader(NewCustomDataset(data_root, data_name, 'VAL'), batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
+    
+    
+    #train_loader = torch.utils.data.DataLoader(CustomDataset(data_root, data_name, 'TRAIN'), batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
+    #val_loader = torch.utils.data.DataLoader(CustomDataset(data_root, data_name, 'VAL'), batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
+    # In case of training with saliency map predictions, please comment the two lines above and uncomment the 2 lines below
+    train_loader = torch.utils.data.DataLoader(SaliencyCustomDataset(data_root, data_name, 'TRAIN'), batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
+    val_loader = torch.utils.data.DataLoader(SaliencyCustomDataset(data_root, data_name, 'VAL'), batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
 
-    # Epochs
+    
+    # Learning rate scheduler and Early stopping 
     for epoch in range(continue_epoch, epochs):
-        # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
-        if bad_epochs == 20:
-            break
-        if bad_epochs > 0 and bad_epochs % 8 == 0:
+        # Decay learning rate if there is no improvement for 5 consecutive epochs, 
+        #and terminate training after 20 consequetive non-improvement epochs 
+        
+        if bad_epochs > 0 and bad_epochs % 5 == 0:
             for parameters in optimizer.param_groups:
                 parameters['lr'] = parameters['lr'] * 0.75
-            print("Learning rate decreased by 25% percent")
     
-        # One epoch's training
-        #train(train_loader, decoder, criterion, optimizer, epoch)
+        if bad_epochs == 20:
+            break
+    
+    
         train(train_loader, decoder, criterion, optimizer, epoch)
-
-        # One epoch's validation
         bleu4_score = validate(val_loader, decoder, criterion)
-        #new_bleu4_score = validate(new_val_loader, decoder, criterion)
 
         best = False
         if bleu4_score > best_bleu4_score:
@@ -103,203 +98,191 @@ def main():
             
         else:
             bad_epochs += 1
-            print("\nEpochs since last improvement: %d\n" % (bad_epochs,))
+            print("Number of epochs after last improvement %d\n" % (bad_epochs,))
 
-        # Save checkpoint
+        # Save checkpoint according to your model (uncomment the desired one and comment out the rest):
+
+        #save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
         #save_checkpoint_sentinel(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
         #save_checkpoint_arnet(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
-        #save_checkpoint_arnet_new(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
-        #save_checkpoint(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
-        save_checkpoint_abl_ar(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
+        #save_checkpoint_arnet_sentinel(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
+        save_checkpoint_saliency(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best)
+        #save_checkpoint_simplified(data_name, epoch, bad_epochs, decoder, optimizer, bleu4_score, best):
 
 
 
 def train(train_loader, decoder, criterion, optimizer, epoch):
-    """
-    Performs one epoch's training.
-    :param train_loader: DataLoader for training data
-    :param decoder: decoder model
-    :param criterion_ce: cross entropy loss layer
-    :param optimizer: optimizer to update decoder's weights
-    :param epoch: epoch number
-    """
+    
 
     decoder.train()  # Activate Dropout and BatchNormalization
 
-    batch_time = 0  # forward prop. + back prop. time
-    data_time = 0  # data loading time
     losses = 0 # loss (per word decoded)
     loss_count = 0
     top5accs = 0  # top5 accuracy
     top5counts = 0
 
-    time_start = time.time()
-
     # Batches
-    for i, (imagefeatures, sequence, sequencelength) in enumerate(train_loader):
-        data_time += (time.time() - time_start)
+    #for i, (imagefeatures, sequence, sequencelength) in enumerate(train_loader):
+    # In case of training with saliency map predictions, please comment the the line above and uncomment the line below as train_loder returns
+    # features obtained from saliency as well. 
+    for i, (imagefeatures, salfeatures, sequence, sequencelength) in enumerate(train_loader):
+    
 
-        # Move to GPU, if available
         imagefeatures = imagefeatures.to(device)
-        #salfeatures = salfeatures.to(device)
+        # Uncomment below in case of saliency model
+        salfeatures = salfeatures.to(device)
         sequence = sequence.to(device)
         sequencelength = sequencelength.to(device)
 
-        # Forward prop.
-        
-        # SALIENCE
-        #preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, salfeatures, sequence, sequencelength)
+        # Base model (decoder returns attentions in order to visualize the attention on bounding boxes in inference):
+        #preds, sorted_sequence, decode_lengths, _, sort_indexes  = decoder(imagefeatures, sequence, sequencelength)
 
-        # ORIGINAL
+        # Saliency model (decoder takes salfeatures for the forwards pass):
+        preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, salfeatures, sequence, sequencelength)
+
+        # ARNet models (decoder returns the ARNet network loss (regularizing loss) ):
+        #preds, sorted_sequence, decode_lengths, sort_indexes, loss_ar  = decoder(imagefeatures, sequence, sequencelength)
+        
+        # Sentinel and Simplified model:
         #preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, sequence, sequencelength)
 
-        preds, sorted_sequence, decode_lengths, sort_indexes, loss_ar  = decoder(imagefeatures, sequence, sequencelength)
-        #Max-pooling across predicted words across time steps for discriminative supervision
-
-        # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
+        
+        # skip the <start> token
         labels = sorted_sequence[:, 1:]
 
-        # Remove timesteps that we didn't decode at, or are pads
-        # pack_padded_sequence is an easy trick to do this
+        # Use pack padding in any case to have same dimension of preds and labels
         preds = pack_padded_sequence(preds, decode_lengths, batch_first=True).data
         labels = pack_padded_sequence(labels, decode_lengths, batch_first=True).data
 
-        # Calculate loss
-        
-        loss = criterion(preds, labels) + loss_ar
+        # Calculate loss (In case of models containing ARNet network, please add loss_ar as well)
+        loss = criterion(preds, labels) #+ loss_ar
         
         optimizer.zero_grad()
         loss.backward()
-	
-        # Clip gradients when they are getting too large
+
+        # Solve vanishing/explosion gradient issue by gradient clipping
         torch.nn.utils.clip_grad_norm_(filter(lambda p: p.requires_grad, decoder.parameters()), 0.25)
 
-        # Update weights
+
         optimizer.step()
 
-        # Keep track of metrics
-        top5 = topk_accuracy(preds, labels, 5)
+        #Calculate top 5 accuracy
+        _, indices = preds.topk(5, 1, True, True)
+        correct_preds = indices.eq(labels.view(-1, 1).expand_as(indices))
+        total_correct_preds = correct_preds.view(-1).float().sum()  
+        top5 = total_correct_preds.item() * (100.0 / labels.size(0))
         top5accs += top5
         top5counts += sum(decode_lengths)
         top5_ave = top5accs / top5counts
         losses += loss
         loss_count += sum(decode_lengths)
         loss_ave = losses/loss_count
-        batch_time = time.time() - time_start
-        time_start = time.time()
+        
 
-        # Print status
         if i % 100 == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
-                  'Batch Time {batch_time:.3f}\t'
-                  'Data Load Time {data_time:.3f})\t'
                   'Loss {loss:.4f} ({loss_ave:.4f})\t'
                   'Top-5 Accuracy {top5:.3f} ({top5_ave:.4f})'.format(epoch, i, len(train_loader),
-                                                                          batch_time=batch_time,
-                                                                          data_time=data_time, loss=loss, loss_ave =loss_ave, 
+                                                                          loss=loss, loss_ave =loss_ave, 
                                                                           top5 = top5, top5_ave = top5_ave))
 
 
 def validate(val_loader, decoder, criterion):
-    """
-    Performs one epoch's validation.
-    :param val_loader: DataLoader for validation data.
-    :param decoder: decoder model
-    :param criterion_ce: cross entropy loss layer
-    :param criterion_dis : discriminative loss layer
-    :return: BLEU-4 score
-    """
+    
     decoder.eval()  # eval mode (no dropout or batchnorm)
 
-    batch_time = 0
     losses = 0
     loss_count = 0
     top5accs = 0
     top5counts = 0
 
-    time_start = time.time()
 
-    groundtruths = list()  # references (true captions) for calculating BLEU-4 score
-    predictions = list()  # hypotheses (predictions)
+    groundtruths = list()  
+    predictions = list()  
 
-    # Batches
     with torch.no_grad(): 
-        for i, (imagefeatures, sequence, sequencelength, sequences_generated) in enumerate(val_loader):
+        #for i, (imagefeatures, sequence, sequencelength, sequences_generated) in enumerate(val_loader):
+        # In case of training with saliency map predictions, please comment the the line above and uncomment the line below as train_loder returns
+        # features obtained from saliency as well. 
+        for i, (imagefeatures, salfeatures, sequence, sequencelength, sequences_generated) in enumerate(val_loader):
 
-            # Move to device, if available
+           
             imagefeatures = imagefeatures.to(device)
-            #salfeatures = salfeatures.to(device)
+            # Uncomment below in case of saliency model
+            salfeatures = salfeatures.to(device)
             sequence = sequence.to(device)
             sequencelength = sequencelength.to(device)
             sequences_generated = sequences_generated.to(device)
+            
 
-            #SALIENCE
-            #preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, salfeatures, sequence, sequencelength)
-            # ORIGINAL
+
+            
+            # Base model (decoder returns attentions in order to visualize the attention on bounding boxes in inference):
+            #preds, sorted_sequence, decode_lengths, _, sort_indexes  = decoder(imagefeatures, sequence, sequencelength)
+
+            # Saliency model (decoder takes salfeatures for the forwards pass):
+            preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, salfeatures, sequence, sequencelength)
+
+            # ARNet models (decoder returns the ARNet network loss (regularizing loss) ):
+            #preds, sorted_sequence, decode_lengths, sort_indexes, loss_ar  = decoder(imagefeatures, sequence, sequencelength)
+            
+            # Sentinel and Simplified model:
             #preds, sorted_sequence, decode_lengths, sort_indexes = decoder(imagefeatures, sequence, sequencelength)
-            preds, sorted_sequence, decode_lengths,sort_indexes, loss_ar= decoder(imagefeatures, sequence, sequencelength)
 
+            sequences_generated = sequences_generated[sort_indexes]  # because images were sorted in the decoder
 
-            # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
+            # skip the <start> token
             labels =sorted_sequence[:, 1:]
             
 
-            # Remove timesteps that we didn't decode at, or are pads
-            # pack_padded_sequence is an easy trick to do this
             copy_preds = preds.clone()
+             # Use pack padding in any case to have same dimension of preds and labels
             preds = pack_padded_sequence(preds, decode_lengths, batch_first=True).data
             labels = pack_padded_sequence(labels, decode_lengths, batch_first=True).data
 
-            # Calculate loss
-            loss = criterion(preds, labels)  + loss_ar
+            # Calculate loss (In case of models containing ARNet network, please add loss_ar as well)            
+            loss = criterion(preds, labels) # + loss_ar
 
-            # Keep track of metrics
-            top5 = topk_accuracy(preds, labels, 5)
+            # Top-k accuracy
+            _, indices = preds.topk(5, 1, True, True)
+            correct_preds = indices.eq(labels.view(-1, 1).expand_as(indices))
+            total_correct_preds = correct_preds.view(-1).float().sum()  
+            top5 = total_correct_preds.item() * (100.0 / labels.size(0))          
             top5accs += top5
             top5counts += sum(decode_lengths)
             top5_ave = top5accs / top5counts
             losses += loss
             loss_count += sum(decode_lengths)
             loss_ave = losses/loss_count
-            batch_time = time.time() - time_start
-
-            start = time.time()
+            
 
             if i % 100 == 0:
                 print('Validation: [{0}/{1}]\t'
-                      'Batch Time {batch_time:.3f})\t'
-                      'Loss {loss:.4f} ({loss_ave:.4f}) )\t'
-                      'Top-5 Accuracy {top5:.3f} ({top5_ave:.3f})\t'.format(i, len(val_loader), batch_time = batch_time,
+                      'Loss {loss:.4f} ({loss_ave:.4f})\t'
+                      'Top-5 Accuracy {top5:.3f} ({top5_ave:.3f})\t'.format(i, len(val_loader), 
                                                                                loss = loss, loss_ave = loss_ave, top5 = top5, top5_ave = top5_ave))
 
-            # Store references (true captions), and hypothesis (prediction) for each image
-            # If for n images, we have n hypotheses, and references a, b, c... for each image, we need -
-            # references = [[ref1a, ref1b, ref1c], [ref2a, ref2b], ...], hypotheses = [hyp1, hyp2, ...]
-
-            # References
-            sequences_generated = sequences_generated[sort_indexes]  # because images were sorted in the decoder
             for i in range(sequences_generated.shape[0]):
                 cap = sequences_generated[i].tolist()
                 caps = list(map(lambda x: [word for word in x if word not in {mapping['<start>'], mapping['<pad>']}], cap))
                 groundtruths.append(caps)
 
-
             _, best_preds = torch.max(copy_preds, dim=2)
             best_preds = best_preds.tolist()
             temp = []
             for i, prediction in enumerate(best_preds):
-                temp.append(best_preds[i][:decode_lengths[i]])  # remove pads
+                temp.append(prediction[:decode_lengths[i]])
             best_preds = temp
             predictions.extend(best_preds)
 
 
-    # Calculate BLEU-4 scores
-    bleu4 = corpus_bleu(groundtruths, predictions)
-    bleu4 = round(bleu4, 4)
 
-    print('\n * LOSS - {loss_avg:.3f}, TOP-5 ACCURACY - {top5_avg:.3f}, BLEU-4 - {bleu}\n'.format(loss_avg = loss_ave, top5_avg= top5_ave, bleu=bleu4))
 
-    return bleu4
+    bleu4_score = round(corpus_bleu(groundtruths, predictions), 4)
+
+    print('\nLoss: {loss_ave:.3f}, Top-5 accuracy: - {top5_ave:.3f}, Bleu-4 score: - {bleu_score}\n'.format(loss_ave = loss_ave, top5_ave= top5_ave, bleu_score=bleu4_score))
+
+    return bleu4_score
 
 
 if __name__ == '__main__':
