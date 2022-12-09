@@ -19,6 +19,10 @@ python create_input_files.py
 ```
 It will create the useful files for training/validation/testing. Please move those files to 'final_dataset' folder.
 
+
+For Saliency Map model, we have obtained the saliency maps using https://github.com/marcellacornia/sam. For running saliency map model, you need to have total_predictions folder which contain the images obtained. You can download those images using this link:
+
+
 # Training 
 Type this command for training from scratch:
 ```bash
@@ -28,7 +32,7 @@ If you want to resume your training, please edit the variable checkpoint to the 
 
 
 # Evaluation
-
+For different models, we have different evaluation files. For experiments of base (replication) and ARNet model, please use ``` python eval.py ```. Please comment/uncomment the lines (line 67-68) in eval.py depending on using ARNet model or Base model. 
 
 
 
