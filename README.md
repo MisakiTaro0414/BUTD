@@ -33,6 +33,17 @@ If you want to resume your training, please edit the variable checkpoint to the 
 
 # Evaluation
 For different models, we have different evaluation files. For experiments of base (replication) and ARNet model, please use ``` python eval.py ```. Please comment/uncomment the lines (line 67-68) in eval.py depending on using ARNet model or Base model. 
+For models containing the Visual Sentinel, namely solely Sentinel and Sentinel+ARNet model, please use ``` python sentinel_eval.py ```. 
+For simplified model, please use ``` python simplified_eval.py ```. 
+For saliency model, please use ``` python saliency_eval.py ```. 
+
+Please edit the variable checkpoint to the best checkpoint file path in python file to perform evaluation. Output will include BLEU-1, BLEU-2, BLEU-3, BLEU-4, CIDEr, METEOR and ROUGE-L scores for the best checkpoint file.
+
+# Inference
+Due to CUDA compatibility issue, we did not manage to obtain end-to-end inference. To obtain the bottom-up features, run the inference.ipynb file in Google Colab. Please create a folder named "project" in Google Drive and add the content of project folder to that drive. After running inference.iypnb file it will save the bounding boxes as .pt in Google Drive. Load these boxes in test.py (line 114) and run command ``` python test.py ```. This will produce the best captioning of the image.
+
+
+
 
 
 
