@@ -19,16 +19,24 @@ python create_input_files.py
 ```
 It will create the useful files for training/validation/testing. Please move those files to 'final_dataset' folder.
 
-
-For Saliency Map model, we have obtained the saliency maps using https://github.com/marcellacornia/sam. For running saliency map model, you need to have total_predictions folder which contain the images obtained. You can download those images using this link:
-
-
 # Training 
 Type this command for training from scratch:
 ```bash
 python train.py
 ```
 If you want to resume your training, please edit the variable checkpoint to the checkpoint file path in train.py. We have experimented several models in our project. If you want to experiment these models, please go through train.py and comment/uncomment the lines to specify the model to be used. 
+
+Please note that checkpoint files require the models to have the path that were present when the checkpoint file was obtained. So, if you want to resume training please do the following file name and location changes: Move all models from '''models''' folder to root folder except '''saliency_model.py'''. Rename moved model files: ''' model.py -> model.py ''' , ''' arnet_sentinel_model.py -> ar_sen.py''', ''' simplified_model.py -> ablation_model.py ''', ''arnet_model.py -> ARNet_model.py''', ''' sentinel_model.py -> Adap_Att.py '''. As a result you must have the following structure:
+```
+|-- models
+|   |-- saliency_model.py
+|-- model.py
+|-- ar_sen.py
+|-- ablation_model.py
+|-- ARNet_model.py 
+|-- Adap_Att.py 
+```
+
 
 
 # Evaluation
