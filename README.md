@@ -7,6 +7,9 @@ In our implementation, we have used MSCOCO dataset. Please download MSCOCO datas
 
 We have used already obtained bottom-up features for training. Please download them using this link: https://imagecaption.blob.core.windows.net/imagecaption/trainval_36.zip . Unzip the downloaded folder and move to the 'bottom_up_features' folder.
 
+To obtain the best checkpoint files for different models, please download them using the following link: https://drive.google.com/file/d/1vVGdRQl7bUX4R97F-A3t4PFzv3PNsNq5/view?usp=share_link. Please unzip the file in your working directory to obtain ```results``` folder which contain best checkpoint files for several models implemented. 
+
+
 Next type the command: 
 ```bash
 python bottom-up_features/tsv.py
@@ -48,7 +51,7 @@ For saliency model, please use ``` python saliency_eval.py ```.
 Please edit the variable checkpoint to the best checkpoint file path in python file to perform evaluation. Output will include BLEU-1, BLEU-2, BLEU-3, BLEU-4, CIDEr, METEOR and ROUGE-L scores for the best checkpoint file.
 
 # Inference
-Due to CUDA compatibility issue, we did not manage to obtain end-to-end inference. To obtain the bottom-up features, run the inference.ipynb file in Google Colab. Please create a folder named "project" in Google Drive and add the content of "project" folder to that drive folder. After running inference.iypnb file it will save the bounding boxes as .pt in Google Drive. Load these boxes in test.py (line 114) and run command ``` python test.py ```. This will produce the best captioning of the image.
+Due to CUDA compatibility issue, we did not manage to obtain end-to-end inference. To obtain the bottom-up features, run the inference.ipynb file in Google Colab. Please create a folder named "project" in Google Drive and add the content of "project" folder to that drive folder. After running  ```inference.iypnb``` file it will save the bounding boxes as .pt in Google Drive. Load these boxes in test.py (line 114) and run command ``` python test.py ```. This will produce the best captioning of the image.
 
 
 
