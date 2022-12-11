@@ -5,4 +5,4 @@ final_dataset/*
 results/*
 predictions/*
 total_predictions/*
-__pycache__/
+__pycache__/*
