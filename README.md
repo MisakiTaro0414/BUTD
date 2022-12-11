@@ -30,7 +30,7 @@ To obtain the best checkpoint files for different models, please download them u
 
 If you want to resume your training, please edit the variable checkpoint to the checkpoint file path in train.py. We have experimented several models in our project. If you want to experiment these models, please go through train.py and comment/uncomment the lines to specify the model to be used. 
 
-Please note that checkpoint files require the models to have the path that were present when the checkpoint file was obtained. So, if you want to resume training please do the following file name and location changes: Move all models from '''models''' folder to root folder except '''saliency_model.py'''. Rename moved model files: ''' model.py -> model.py ''' , ''' arnet_sentinel_model.py -> ar_sen.py''', ''' simplified_model.py -> ablation_model.py ''', ''arnet_model.py -> ARNet_model.py''', ''' sentinel_model.py -> Adap_Att.py '''. As a result you must have the following structure:
+Please note that checkpoint files require the models to have the path that were present when the checkpoint file was obtained. So, if you want to resume training please do the following file name and location changes: Move all models from ```models``` folder to root folder except ```saliency_model.py```. Rename moved model files: ```model.py -> model.py ``` , ``` arnet_sentinel_model.py -> ar_sen.py ```, ```simplified_model.py -> ablation_model.py ```, ```arnet_model.py -> ARNet_model.py```, ``` sentinel_model.py -> Adap_Att.py ```. As a result you must have the following structure:
 ```
 |-- models
 |   |-- saliency_model.py
