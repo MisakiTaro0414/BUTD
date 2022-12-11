@@ -7,9 +7,6 @@ In our implementation, we have used MSCOCO dataset. Please download MSCOCO datas
 
 We have used already obtained bottom-up features for training. Please download them using this link: https://imagecaption.blob.core.windows.net/imagecaption/trainval_36.zip . Unzip the downloaded folder and move to the 'bottom_up_features' folder.
 
-To obtain the best checkpoint files for different models, please download them using the following link: https://drive.google.com/file/d/1vVGdRQl7bUX4R97F-A3t4PFzv3PNsNq5/view?usp=share_link. Please unzip the file in your working directory to obtain ```results``` folder which contain best checkpoint files for several models implemented. 
-
-
 Next type the command: 
 ```bash
 python bottom-up_features/tsv.py
@@ -27,6 +24,10 @@ Type this command for training from scratch:
 ```bash
 python train.py
 ```
+To obtain the best checkpoint files for different models, please download them using the following link: https://drive.google.com/file/d/1vVGdRQl7bUX4R97F-A3t4PFzv3PNsNq5/view?usp=share_link. Please unzip the file in your working directory to obtain ```results``` folder which contain best checkpoint files for several models implemented. 
+
+
+
 If you want to resume your training, please edit the variable checkpoint to the checkpoint file path in train.py. We have experimented several models in our project. If you want to experiment these models, please go through train.py and comment/uncomment the lines to specify the model to be used. 
 
 Please note that checkpoint files require the models to have the path that were present when the checkpoint file was obtained. So, if you want to resume training please do the following file name and location changes: Move all models from '''models''' folder to root folder except '''saliency_model.py'''. Rename moved model files: ''' model.py -> model.py ''' , ''' arnet_sentinel_model.py -> ar_sen.py''', ''' simplified_model.py -> ablation_model.py ''', ''arnet_model.py -> ARNet_model.py''', ''' sentinel_model.py -> Adap_Att.py '''. As a result you must have the following structure:
