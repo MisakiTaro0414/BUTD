@@ -7,6 +7,9 @@ In our implementation, we have used MSCOCO dataset. Please download MSCOCO datas
 
 We have used already obtained bottom-up features for training. Please download them using this link: https://imagecaption.blob.core.windows.net/imagecaption/trainval_36.zip . Unzip the downloaded folder and move to the 'bottom_up_features' folder.
 
+To obtain the best checkpoint files for different models, please use the following link: https://drive.google.com/file/d/1vVGdRQl7bUX4R97F-A3t4PFzv3PNsNq5/view?usp=share_link
+
+
 Next type the command: 
 ```bash
 python bottom-up_features/tsv.py
